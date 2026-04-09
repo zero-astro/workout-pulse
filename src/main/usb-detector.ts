@@ -236,8 +236,9 @@ export class RobustUsbDetector extends EventEmitter {
       if (this.isMonitoring) {
         this.discoverDevices()
       }
-      clearTimeout(initialScan)
     }, 1000)
+    // Store reference for cleanup in stopMonitoring
+    ;(this as any)._initialScanTimeout = initialScan
   }
 
   /**
@@ -418,6 +419,12 @@ export class RobustUsbDetector extends EventEmitter {
    * Stop all monitoring mechanisms
    */
   stopMonitoring(): void {
+    // Clear initial scan timeout if still pending
+    if ((this as any)._initialScanTimeout) {
+      clearTimeout((this as any)._initialScanTimeout)
+      ;(this as any)._initialScanTimeout = null
+    }
+    
     // Stop polling
     if (this.pollInterval) {
       clearInterval(this.pollInterval)
@@ -431,7 +438,6 @@ export class RobustUsbDetector extends EventEmitter {
     }
     
     this.isMonitoring = false
-    console.log('[WorkoutPulse] USB monitor stopped')
   }
 
   /**

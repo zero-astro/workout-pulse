@@ -32,11 +32,11 @@ describe('RobustUsbDetector', () => {
         await fs.promises.rm(testDirPath, { recursive: true, force: true })
       }
     } catch (error) {
-      // Silently ignore cleanup errors (especially EACCES on /tmp)
+      // Silently ignore cleanup errors
     }
     
     jest.clearAllMocks()
-  })
+  }, 10000) // Increase timeout for cleanup
 
   describe('device discovery', () => {
     it('should initialize with empty device list', () => {
