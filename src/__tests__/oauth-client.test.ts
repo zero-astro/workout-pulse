@@ -177,7 +177,12 @@ describe('FittrackeeOAuthClient', () => {
       // Make the path invalid to trigger write error
       client.credentialsPath = '/nonexistent/directory/creds.json'
 
+      // Suppress console.error for this test
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
       expect(() => client.saveCredentials(mockCredentials)).toThrow()
+
+      consoleSpy.mockRestore()
     })
   })
 
