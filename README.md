@@ -95,8 +95,8 @@ Currently using Node-USB for device detection. May need vendor-specific PID/VID 
 ## TODO - Implementation Tasks
 
 ### Core Features (High Priority)
-- [ ] Implement robust USB device detection with fallback mechanisms
-- [ ] Complete Fittrackee OAuth 2.0 authentication flow
+- [x] ✅ **Implement robust USB device detection with fallback mechanisms** - Completed: Multi-method detection (file watcher, mount scanning, polling), multi-brand support (Garmin/Fitbit/Apple Watch), error handling
+- [x] ✅ **Complete Fittrackee OAuth 2.0 authentication flow** - Completed: Full OAuth client with authorization URL generation, code exchange, token refresh, secure credential storage with encryption
 - [ ] Build workout data extraction from smartwatch files
 - [ ] Create API client for Fittrackee workouts endpoint
 - [ ] Implement incremental sync logic (avoid duplicate entries)
