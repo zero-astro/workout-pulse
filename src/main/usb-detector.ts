@@ -355,6 +355,11 @@ export class RobustUsbDetector extends EventEmitter {
       }
     }, 5000) // Check every 5 seconds
     
+    // Unref to prevent Node from waiting for this timer during test cleanup
+    if (this.pollInterval) {
+      this.pollInterval.unref()
+    }
+    
     console.log('[WorkoutPulse] Polling fallback enabled (5s interval)')
   }
 
