@@ -22,15 +22,17 @@ describe('RobustUsbDetector', () => {
     detector.deviceDirs = []
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     // Stop monitoring and clean up
     try {
       detector.stopMonitoring()
       
       const testDirPath = path.dirname(testDir)
-      fs.rmSync(testDirPath, { recursive: true, force: true })
+      if (fs.existsSync(testDirPath)) {
+        await fs.promises.rm(testDirPath, { recursive: true, force: true })
+      }
     } catch (error) {
-      console.log('Cleanup error:', error)
+      // Silently ignore cleanup errors (especially EACCES on /tmp)
     }
     
     jest.clearAllMocks()

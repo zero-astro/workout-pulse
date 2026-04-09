@@ -122,7 +122,7 @@ export class RobustUsbDetector extends EventEmitter {
       const results = glob.sync(pattern, { absolute: true })
       return results.length > 0
     } catch {
-      // glob not available, skip this check
+      // glob not available or pattern invalid, skip this check
       return false
     }
   }
@@ -232,7 +232,12 @@ export class RobustUsbDetector extends EventEmitter {
     this.startPolling()
     
     // Initial scan after a short delay to catch any late-emerging devices
-    setTimeout(() => this.discoverDevices(), 1000)
+    const initialScan = setTimeout(() => {
+      if (this.isMonitoring) {
+        this.discoverDevices()
+      }
+      clearTimeout(initialScan)
+    }, 1000)
   }
 
   /**
