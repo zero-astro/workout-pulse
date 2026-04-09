@@ -1,7 +1,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
+import * as fs from 'fs'
+import { fittrackeeOAuth, FittrackeeOAuthClient } from './oauth-client'
+import { initializeFittrackeeApi, FittrackeeApiClient } from './fittrackee-api-client'
+import { scanWorkouts, WorkoutData } from './workout-parser'
+import { detectUsbDevice } from './usb-detector'
 
 let mainWindow: BrowserWindow | null = null
+let fittrackeeApi: FittrackeeApiClient | null = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -33,18 +39,144 @@ app.on('activate', () => {
 
 // USB Device Detection
 ipcMain.handle('detect-usb-device', async () => {
-  // TODO: Implement USB detection logic
-  return { connected: false, device: null }
+  try {
+    const device = await detectUsbDevice()
+    console.log('[WorkoutPulse] USB detection result:', device)
+    return device
+  } catch (error) {
+    console.error('[WorkoutPulse] USB detection error:', error)
+    return { connected: false, device: null }
+  }
 })
 
-// Fittrackee OAuth
-ipcMain.handle('fittrackee-authenticate', async (_event, credentials) => {
-  // TODO: Implement OAuth flow with Fittrackee
-  return { success: true, token: 'mock_token' }
+// Fittrackee OAuth - Set credentials
+ipcMain.handle('fittrackee-set-credentials', async (_event, clientId, clientSecret) => {
+  try {
+    fittrackeeOAuth.setCredentials(clientId, clientSecret)
+    return { success: true }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error setting credentials:', error)
+    return { success: false, error: error.message }
+  }
 })
 
-// Sync workouts
-ipcMain.handle('sync-workouts', async () => {
-  // TODO: Implement workout sync logic
-  return { success: true, synced: 0 }
+// Fittrackee OAuth - Get authorization URL
+ipcMain.handle('fittrackee-get-auth-url', async () => {
+  try {
+    const authUrl = fittrackeeOAuth.getAuthorizationUrl()
+    return { success: true, authUrl }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error getting auth URL:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Fittrackee OAuth - Exchange code for token
+ipcMain.handle('fittrackee-exchange-code', async (_event, code) => {
+  try {
+    const credentials = await fittrackeeOAuth.exchangeCodeForToken(code)
+    
+    // Initialize API client with new credentials
+    if (!fittrackeeApi) {
+      fittrackeeApi = initializeFittrackeeApi(fittrackeeOAuth)
+    }
+    fittrackeeApi.setAccessToken(credentials)
+    
+    return { success: true, credentials }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error exchanging code:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Fittrackee OAuth - Check authentication status
+ipcMain.handle('fittrackee-check-auth', async () => {
+  const isAuthenticated = fittrackeeOAuth.isAuthenticated()
+  const credentials = fittrackeeOAuth.loadStoredCredentials()
+  
+  return {
+    success: true,
+    authenticated: isAuthenticated,
+    hasToken: !!credentials?.accessToken,
+    tokenExpiry: credentials?.tokenExpiry
+  }
+})
+
+// Sync workouts from USB to Fittrackee
+ipcMain.handle('sync-workouts', async (_event, scanDirectory?: string) => {
+  try {
+    // Check authentication first
+    const authStatus = await ipcMain.handle('fittrackee-check-auth')()
+    if (!authStatus.authenticated) {
+      return { success: false, error: 'Not authenticated with Fittrackee' }
+    }
+
+    // Initialize API client if needed
+    if (!fittrackeeApi) {
+      fittrackeeApi = initializeFittrackeeApi(fittrackeeOAuth)
+    }
+
+    // Scan for workout files
+    const scanPath = scanDirectory || '/Volumes/USB_DRIVE/workouts' // Default path
+    let workouts: WorkoutData[] = []
+    
+    try {
+      workouts = await scanWorkouts(scanPath)
+    } catch (error) {
+      console.warn('[WorkoutPulse] Could not scan directory:', error)
+      // Try common locations
+      const homeDir = require('os').homedir()
+      const commonPaths = [
+        path.join(homeDir, 'Downloads'),
+        path.join(homeDir, 'Documents')
+      ]
+      
+      for (const scanPath of commonPaths) {
+        try {
+          workouts = await scanWorkouts(scanPath)
+          if (workouts.length > 0) break
+        } catch {}
+      }
+    }
+
+    console.log('[WorkoutPulse] Found', workouts.length, 'workouts to sync')
+    
+    if (workouts.length === 0) {
+      return { success: true, synced: 0, message: 'No workout files found' }
+    }
+
+    // Upload workouts to Fittrackee
+    const result = await fittrackeeApi.uploadWorkoutsBatch(workouts, {
+      skipDuplicates: true,
+      batchSize: 5,
+      delayMs: 1000
+    })
+
+    return {
+      success: true,
+      total: workouts.length,
+      synced: result.success,
+      failed: result.failed,
+      errors: result.errors
+    }
+    
+  } catch (error) {
+    console.error('[WorkoutPulse] Sync error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Get recent workouts from Fittrackee
+ipcMain.handle('fittrackee-get-recent-workouts', async (_event, limit = 10) => {
+  try {
+    if (!fittrackeeApi) {
+      fittrackeeApi = initializeFittrackeeApi(fittrackeeOAuth)
+    }
+    
+    const workouts = await fittrackeeApi.getRecentWorkouts(limit)
+    return { success: true, workouts }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error fetching recent workouts:', error)
+    return { success: false, error: error.message }
+  }
 })

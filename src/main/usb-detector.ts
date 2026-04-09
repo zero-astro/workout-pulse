@@ -454,3 +454,19 @@ export class RobustUsbDetector extends EventEmitter {
 
 // Export singleton instance
 export const usbDetector = new RobustUsbDetector()
+
+/**
+ * Simple USB device detection function (non-streaming)
+ */
+export async function detectUsbDevice(): Promise<{ connected: boolean; device?: DeviceInfo }> {
+  // Trigger initial discovery
+  usbDetector.refreshDeviceList()
+  
+  const devices = usbDetector.getDetectedDevices()
+  
+  if (devices.length > 0) {
+    return { connected: true, device: devices[0] }
+  }
+  
+  return { connected: false }
+}
