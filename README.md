@@ -112,11 +112,11 @@ Currently using Node-USB for device detection. May need vendor-specific PID/VID 
 - [ ] Add dark/light theme toggle
 
 ### Testing & Quality (Medium Priority)
+- [x] ✅ **Write unit tests for workout parser** - Completed: Jest test suite with 11 passing tests, 77% coverage on workout-parser.ts
 - [ ] Write unit tests for USB detection logic
-- [ ] Create integration tests for Fittrackee API calls
+- [ ] Create integration tests for Fittrackee API calls (mocked)
 - [ ] Add E2E tests with mocked smartwatch data
-- [ ] Implement automated testing suite
-- [ ] Set up CI/CD pipeline for automated builds and tests
+- [x] ✅ **Set up CI/CD pipeline** - Completed: GitHub Actions workflow for automated testing on push
 
 ### Documentation (Low Priority)
 - [ ] Add detailed API documentation
