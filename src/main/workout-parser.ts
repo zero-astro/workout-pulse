@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { parseDateTime } from './utils' // Helper function
+import * as FIT from 'fit-file-parser'
 
 export interface WorkoutData {
   id: string
@@ -45,8 +46,8 @@ export async function parseFitFile(filePath: string): Promise<WorkoutData | null
 }
 
 /**
- * Extract comprehensive workout data from FIT buffer
- * Parses FIT file records for duration, distance, calories, heart rate, etc.
+ * Extract comprehensive workout data from FIT buffer using fit-file-parser
+ * Parses all FIT file records for accurate duration, distance, calories, heart rate, elevation, etc.
  */
 function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | null {
   try {
@@ -57,7 +58,37 @@ function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | nul
     const idMatch = fileName.match(/activity-(\d+)/)
     const workoutId = idMatch ? idMatch[1] : Date.now().toString()
     
-    // Parse FIT records for comprehensive data extraction
+    // Use fit-file-parser for comprehensive data extraction
+    let parser: FIT.Parser | null = null
+    let records: any[] = []
+    let deviceName = 'Unknown'
+    
+    try {
+      // Parse FIT file using the library
+      parser = new FIT.Parser()
+      const parsedData = parser.parse(buffer)
+      records = parsedData.records || []
+      
+      // Extract device name from manufacturer and product fields
+      const deviceRecords = records.filter((r: any) => r.name === 'device_info')
+      if (deviceRecords.length > 0) {
+        const deviceInfo = deviceRecords[0]
+        const manufacturers: Record<number, string> = {
+          1: 'Garmin',
+          2: 'Suunto',
+          3: 'Polar',
+          4: 'Wahoo',
+          5: 'Coros',
+          6: 'Hammerhead'
+        }
+        deviceName = `${manufacturers[deviceInfo.fields?.manufacturer] || 'Unknown'} ${deviceInfo.fields?.product || ''}`.trim() || 'Unknown'
+      }
+    } catch (parseError) {
+      console.warn('[WorkoutPulse] FIT parsing error, using fallback:', parseError)
+      // Fallback to basic extraction if parser fails
+    }
+    
+    // Extract workout data from parsed records
     let duration = 0
     let distance = 0
     let calories = 0
@@ -65,29 +96,82 @@ function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | nul
     let maxHeartRate = 0
     let startTime = stats.birthtime || new Date()
     let endTime = stats.mtime || new Date()
-    let deviceName = 'Unknown'
     let elevationGain = 0
     let steps = 0
     
-    // Simple FIT parsing: look for common record patterns
-    // FIT files contain binary records with message types and data fields
-    // This is a simplified parser - production should use @fitnesse/fit-parser
+    // Process records to extract workout metrics
+    records.forEach((record: any) => {
+      const fieldName = record.name
+      const fields = record.fields || {}
+      
+      switch (fieldName) {
+        case 'session':
+          // Session data contains overall workout stats
+          duration += fields.total_elapsed_time || 0
+          duration += fields.total_motion_time || 0
+          distance += fields.total_distance || 0
+          calories += fields.total_calories || 0
+          
+          if (fields.avg_heart_rate && fields.avg_heart_rate > 0) {
+            avgHeartRate = Math.max(avgHeartRate, fields.avg_heart_rate)
+          }
+          if (fields.max_heart_rate) {
+            maxHeartRate = Math.max(maxHeartRate, fields.max_heart_rate)
+          }
+          break
+          
+        case 'lap':
+          // Lap data for segment-level stats
+          duration += fields.lap_total_elapsed_time || 0
+          distance += fields.total_distance || 0
+          calories += fields.total_calories || 0
+          break
+          
+        case 'record':
+          // Record-level data (per-second or per-point)
+          if (fields.distance !== undefined) {
+            distance = Math.max(distance, fields.distance)
+          }
+          if (fields.elevation !== undefined && fields.elevation > 0) {
+            elevationGain += fields.elevation
+          }
+          break
+          
+        case 'heart_rate_zone':
+          // Heart rate zones data
+          if (fields.heart_rate !== undefined) {
+            maxHeartRate = Math.max(maxHeartRate, fields.heart_rate)
+          }
+          break
+          
+        case 'device_info':
+          // Device metadata
+          deviceName = `${fields.manufacturer || ''} ${fields.product || ''}`.trim() || 'Unknown'
+          break
+      }
+    })
     
-    // Extract timestamp from file metadata as fallback
-    const fileTime = stats.birthtime?.getTime() || Date.now()
-    startTime = new Date(fileTime)
-    endTime = new Date(fileTime + (duration * 1000))
+    // If parser didn't extract data, use file timestamps as fallback
+    if (duration === 0) {
+      const fileTime = stats.birthtime?.getTime() || Date.now()
+      startTime = new Date(fileTime)
+      endTime = new Date(fileTime + 3600 * 1000) // Default to 1 hour workout
+      duration = 3600
+    }
     
     // Determine workout type from filename or heuristics
     let workoutType = 'Unknown'
-    if (fileName.toLowerCase().includes('run')) {
+    const lowerFileName = fileName.toLowerCase()
+    if (lowerFileName.includes('run')) {
       workoutType = 'Run'
-    } else if (fileName.toLowerCase().includes('bike') || fileName.toLowerCase().includes('ride')) {
+    } else if (lowerFileName.includes('bike') || lowerFileName.includes('ride')) {
       workoutType = 'Ride'
-    } else if (fileName.toLowerCase().includes('walk')) {
+    } else if (lowerFileName.includes('walk')) {
       workoutType = 'Walk'
-    } else if (fileName.toLowerCase().includes('hike')) {
+    } else if (lowerFileName.includes('hike')) {
       workoutType = 'Hike'
+    } else if (lowerFileName.includes('trail')) {
+      workoutType = 'Trail Run'
     }
     
     return {
@@ -112,31 +196,148 @@ function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | nul
 }
 
 /**
- * Parse GPX files (simpler structure than FIT)
+ * Parse GPX files with comprehensive data extraction
+ * Extracts duration, distance, elevation, calories from GPX structure
  */
 export async function parseGpxFile(filePath: string): Promise<WorkoutData | null> {
   try {
     const content = fs.readFileSync(filePath, 'utf-8')
     
-    // Simple XML parsing for GPX
+    // Extract workout ID from filename
     const workoutId = path.basename(filePath, '.gpx')
     
-    // Extract basic info from GPX structure
-    const durationMatch = content.match(/<time>([^<]+)<\/time>/)
-    const startTime = durationMatch ? new Date(durationMatch[1]) : new Date()
+    // Parse XML manually (simple regex-based parsing for common GPX structures)
+    let duration = 0
+    let distance = 0
+    let calories = 0
+    let elevationGain = 0
+    let startTime = new Date()
+    let endTime = new Date()
+    
+    // Extract time elements (start, end, duration)
+    const startMatch = content.match(/<time[^>]*>([^<]+)<\/time>/)
+    if (startMatch) {
+      startTime = new Date(startMatch[1])
+      endTime = new Date(startTime.getTime() + 3600 * 1000) // Default to 1 hour
+    }
+    
+    // Extract duration from metadata or track time range
+    const durationMatches = content.match(/<trktime[^>]*>([^<]+)<\/trktime>/g)
+    if (durationMatches && durationMatches.length > 0) {
+      const times: Date[] = []
+      durationMatches.forEach((match: string) => {
+        const timeMatch = match.match(/>([^<]+)</)
+        if (timeMatch) times.push(new Date(timeMatch[1]))
+      })
+      
+      if (times.length >= 2) {
+        times.sort((a, b) => a.getTime() - b.getTime())
+        startTime = times[0]
+        endTime = times[times.length - 1]
+        duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
+      }
+    }
+    
+    // Extract distance from track points
+    const distanceMatches = content.match(/<trkpt[^>]* lat="([^"]+)" lon="([^"]+)"[^>]*>/g)
+    if (distanceMatches) {
+      let lastLat: number | null = null
+      let lastLon: number | null = null
+      
+      distanceMatches.forEach((match: string) => {
+        const latMatch = match.match(/lat="([^"]+)"/)
+        const lonMatch = match.match(/lon="([^"]+)"/)
+        
+        if (latMatch && lonMatch) {
+          const lat = parseFloat(latMatch[1])
+          const lon = parseFloat(lonMatch[1])
+          
+          if (lastLat !== null && lastLon !== null) {
+            // Calculate distance using Haversine formula
+            const segmentDistance = calculateHaversineDistance(lastLat, lastLon, lat, lon)
+            distance += segmentDistance
+          }
+          
+          lastLat = lat
+          lastLon = lon
+        }
+      })
+    }
+    
+    // Extract elevation gain from track points
+    const elevMatches = content.match(/<ele[^>]*>([^<]+)<\/ele>/g)
+    if (elevMatches) {
+      let lastElev: number | null = null
+      
+      elevMatches.forEach((match: string) => {
+        const elevValue = parseFloat(match.replace(/[^0-9.-]/g, ''))
+        if (!isNaN(elevValue) && lastElev !== null) {
+          const diff = elevValue - lastElev
+          if (diff > 0) {
+            elevationGain += diff
+          }
+        }
+        lastElev = elevValue
+      })
+    }
+    
+    // Extract calories from metadata if available
+    const calMatch = content.match(/<extensions[^>]*>(?:[^<]*(?:<calories[^>]*>([^<]+)<\/calories>)?[^<]*)*?<\/extensions>/s)
+    if (calMatch) {
+      const calSubMatch = calMatch[0].match(/<calories[^>]*>([^<]+)<\/calories>/)
+      if (calSubMatch) {
+        calories = parseFloat(calSubMatch[1])
+      }
+    }
+    
+    // Determine workout type from filename
+    let workoutType = 'GPX Activity'
+    const lowerFileName = path.basename(filePath, '.gpx').toLowerCase()
+    if (lowerFileName.includes('run')) {
+      workoutType = 'Run'
+    } else if (lowerFileName.includes('bike') || lowerFileName.includes('ride')) {
+      workoutType = 'Ride'
+    } else if (lowerFileName.includes('walk')) {
+      workoutType = 'Walk'
+    } else if (lowerFileName.includes('hike')) {
+      workoutType = 'Hike'
+    }
     
     return {
       id: workoutId,
-      type: 'GPX Activity',
+      type: workoutType,
       startTime,
-      endTime: startTime,
-      duration: 0, // Would parse from GPX time elements
-      filePath
+      endTime,
+      duration,
+      distance: distance > 0 ? distance : undefined,
+      calories: calories > 0 ? calories : undefined,
+      filePath,
+      elevationGain: elevationGain > 0 ? elevationGain : undefined
     }
   } catch (error) {
     console.error('[WorkoutPulse] Error parsing GPX file:', error)
     return null
   }
+}
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * Returns distance in meters
+ */
+function calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000 // Earth's radius in meters
+  
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  
+  return R * c
 }
 
 /**
