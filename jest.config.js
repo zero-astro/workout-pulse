@@ -5,7 +5,25 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
   testMatch: ['**/__tests__/**/*.test.ts'],
   transform: {
-    '^.+\\.ts$': 'ts-jest'
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true
+        }
+      }
+    ]
+  },
+  // Transform chokidar and @parcel/watcher ESM modules
+  transformIgnorePatterns: [
+    'node_modules/(?!.*(chokidar|@parcel/watcher)/)'
+  ],
+  // Mock modules (Electron, chokidar ESM)
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '^electron$': '<rootDir>/__mocks__/electron.js',
+    'chokidar$': '<rootDir>/__mocks__/chokidar.js'
   },
   collectCoverageFrom: [
     'src/main/**/*.ts',
