@@ -17,28 +17,54 @@ Desktop application to sync smartwatch workouts automatically to Fittrackee via 
 - **TailwindCSS** - Utility-first styling
 - **Node-USB** - USB device detection
 
-## Getting Started
+## Installation After Git Clone
 
 ### Prerequisites
 
 - Node.js 18+ 
 - npm or yarn
+- USB debugging enabled on your smartwatch (if applicable)
 
-### Installation
+### Step-by-Step Setup
 
 ```bash
-# Install dependencies
+# 1. Clone the repository
+git clone <repository-url>
+cd workout-pulse
+
+# 2. Install dependencies
 npm install
 
-# Run in development mode
-npm run dev
+# 3. Configure Fittrackee OAuth credentials
+# Create a .env file in the root directory with:
+# FITTRACKEE_CLIENT_ID=your_client_id
+# FITTRACKEE_CLIENT_SECRET=your_client_secret
+# (Or configure via app settings if using built-in auth)
 
-# Build for production
+# 4. Run in development mode
+cd src/renderer && npm run dev
+
+# Or from the root directory:
+npm run dev
+```
+
+### Build for Production
+
+```bash
+# From project root
 npm run build
 
-# Create distributable packages
+# Create distributable packages (macOS, Windows, Linux)
 npm run dist
 ```
+
+## Quick Start
+
+1. **Clone & Install**: `git clone <repo> && cd workout-pulse && npm install`
+2. **Configure OAuth**: Set up Fittrackee credentials in `.env` or app settings
+3. **Run Dev Server**: `npm run dev`
+4. **Connect Watch**: Plug in your smartwatch via USB
+5. **Sync Workouts**: The app will automatically detect and sync recent workouts
 
 ## Project Structure
 
