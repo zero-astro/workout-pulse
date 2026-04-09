@@ -107,9 +107,9 @@ function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | nul
       switch (fieldName) {
         case 'session':
           // Session data contains overall workout stats
-          duration += fields.total_elapsed_time || 0
-          duration += fields.total_motion_time || 0
-          distance += fields.total_distance || 0
+          duration = Math.max(duration, fields.total_elapsed_time || 0)
+          duration = Math.max(duration, fields.total_motion_time || 0)
+          distance = Math.max(distance, fields.total_distance || 0)
           calories += fields.total_calories || 0
           
           if (fields.avg_heart_rate && fields.avg_heart_rate > 0) {
@@ -121,9 +121,9 @@ function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | nul
           break
           
         case 'lap':
-          // Lap data for segment-level stats
-          duration += fields.lap_total_elapsed_time || 0
-          distance += fields.total_distance || 0
+          // Lap data for segment-level stats (use max to avoid double counting)
+          duration = Math.max(duration, fields.lap_total_elapsed_time || 0)
+          distance = Math.max(distance, fields.total_distance || 0)
           calories += fields.total_calories || 0
           break
           
@@ -214,22 +214,20 @@ export async function parseGpxFile(filePath: string): Promise<WorkoutData | null
     let startTime = new Date()
     let endTime = new Date()
     
-    // Extract time elements (start, end, duration)
-    const startMatch = content.match(/<time[^>]*>([^<]+)<\/time>/)
-    if (startMatch) {
-      startTime = new Date(startMatch[1])
-      endTime = new Date(startTime.getTime() + 3600 * 1000) // Default to 1 hour
-    }
-    
-    // Extract duration from metadata or track time range
-    const durationMatches = content.match(/<trktime[^>]*>([^<]+)<\/trktime>/g)
-    if (durationMatches && durationMatches.length > 0) {
+    // Extract time elements (start, end, duration) from track points
+    const trkptMatches = content.match(/<trkpt[^>]*>([^<]*(?:<[^>]+>[^<]*)*)<\/trkpt>/g)
+    if (trkptMatches && trkptMatches.length >= 2) {
       const times: Date[] = []
-      durationMatches.forEach((match: string) => {
-        const timeMatch = match.match(/>([^<]+)</)
-        if (timeMatch) times.push(new Date(timeMatch[1]))
+      
+      // Extract all timestamps from track points
+      trkptMatches.forEach((match: string) => {
+        const timeMatch = match.match(/<time>([^<]+)<\/time>/)
+        if (timeMatch) {
+          times.push(new Date(timeMatch[1]))
+        }
       })
       
+      // Sort and calculate duration
       if (times.length >= 2) {
         times.sort((a, b) => a.getTime() - b.getTime())
         startTime = times[0]
