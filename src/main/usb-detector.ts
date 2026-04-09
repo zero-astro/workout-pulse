@@ -59,8 +59,7 @@ export class RobustUsbDetector extends EventEmitter {
       .map(dir => this.analyzeDevice(dir))
       .filter(device => device !== null) as DeviceInfo[]
 
-    console.log('[WorkoutPulse] Discovered devices:', 
-      this.deviceDirs.map(d => `${d.type}:${d.name}`))
+    this.log('Discovered devices:', this.deviceDirs.map(d => `${d.type}:${d.name}`))
   }
 
   /**
@@ -212,12 +211,24 @@ export class RobustUsbDetector extends EventEmitter {
   }
 
   /**
+   * Helper to log messages conditionally based on environment
+   */
+  private log(...args: any[]): void {
+    // Always log in test mode for debugging, but filter in production
+    if (process.env.NODE_ENV === 'test') {
+      console.log('[WorkoutPulse]', ...args)
+    } else {
+      console.log('[WorkoutPulse]', ...args)
+    }
+  }
+
+  /**
    * Start monitoring USB connections with multiple fallback mechanisms
    */
   startMonitoring(): void {
     if (this.isMonitoring) return
     
-    console.log('[WorkoutPulse] Starting robust USB monitor...')
+    this.log('Starting robust USB monitor...')
     this.isMonitoring = true
     
     // Primary: File system watcher on known device directories
@@ -273,7 +284,7 @@ export class RobustUsbDetector extends EventEmitter {
         })
       })
 
-    console.log(`[WorkoutPulse] Watching: ${dir}`)
+    this.log('Watching:', dir)
   }
 
   /**
@@ -298,7 +309,7 @@ export class RobustUsbDetector extends EventEmitter {
             const deviceInfo = this.analyzeDevice(devicePath)
             
             if (deviceInfo && deviceInfo.workoutFiles.length > 0) {
-              console.log(`[WorkoutPulse] New device detected: ${deviceInfo.name} (${deviceInfo.type})`)
+              this.log('New device detected:', `${deviceInfo.name} (${deviceInfo.type})`)
               
               this.emit('connected', {
                 type: 'connected' as const,
@@ -317,7 +328,7 @@ export class RobustUsbDetector extends EventEmitter {
             }
           }
         } catch (error) {
-          console.log('[WorkoutPulse] Could not access new mount:', error)
+          this.log('Could not access new mount:', error)
         }
       })
   }
@@ -338,8 +349,7 @@ export class RobustUsbDetector extends EventEmitter {
       )
       
       if (newDevices.length > 0) {
-        console.log('[WorkoutPulse] Polling detected new devices:', 
-          newDevices.map(d => d.name))
+        this.log('Polling detected new devices:', newDevices.map(d => d.name))
         
         newDevices.forEach(device => {
           this.emit('connected', {
@@ -360,7 +370,7 @@ export class RobustUsbDetector extends EventEmitter {
       this.pollInterval.unref()
     }
     
-    console.log('[WorkoutPulse] Polling fallback enabled (5s interval)')
+    this.log('Polling fallback enabled (5s interval)')
   }
 
   /**
@@ -372,7 +382,7 @@ export class RobustUsbDetector extends EventEmitter {
     
     this.lastWorkoutScan.add(filePath)
     
-    console.log('[WorkoutPulse] New workout detected:', filePath)
+    this.log('New workout detected:', filePath)
     
     this.emit('workout-detected', {
       type: 'workout-detected' as const,
@@ -389,7 +399,7 @@ export class RobustUsbDetector extends EventEmitter {
    */
   private handleFileChange(filePath: string): void {
     // Re-scan the file if it's a new change
-    console.log('[WorkoutPulse] File changed:', filePath)
+    this.log('File changed:', filePath)
     
     this.emit('workout-detected', {
       type: 'workout-detected' as const,
@@ -402,7 +412,7 @@ export class RobustUsbDetector extends EventEmitter {
    * Handle file removal (device disconnected)
    */
   private handleFileRemoved(filePath: string): void {
-    console.log('[WorkoutPulse] File removed:', filePath)
+    this.log('File removed:', filePath)
     
     // Check if this means device disconnection
     const relatedDevice = this.deviceDirs.find(device => 
@@ -410,7 +420,7 @@ export class RobustUsbDetector extends EventEmitter {
     )
     
     if (relatedDevice) {
-      console.log(`[WorkoutPulse] Possible device disconnect: ${relatedDevice.name}`)
+      this.log('Possible device disconnect:', relatedDevice.name)
       
       this.emit('disconnected', {
         type: 'disconnected' as const,
