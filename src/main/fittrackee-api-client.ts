@@ -9,7 +9,7 @@ export interface FittrackeeWorkout {
   uuid: string
   activity_type_id: number
   device_uuid?: string
-  is_ outdoors?: boolean
+  is_outdoors?: boolean
   name?: string
   description?: string
   distance: number // meters
