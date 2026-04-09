@@ -205,14 +205,17 @@ describe('FittrackeeOAuthClient', () => {
 
   describe('getAuthorizationUrl', () => {
     it('should generate authorization URL with correct parameters', () => {
+      // Set credentials before generating URL (required for client_id)
+      client.setCredentials('test-client-id', 'test-client-secret')
+      
       const url = client.getAuthorizationUrl()
       
       expect(url).toContain('https://api.fittrackee.org/oauth/authorize')
-      expect(url).toContain('client_id=test-client-id') // Will use default from setCredentials
-      expect(url).toContain('redirect_uri=http://localhost:3456/callback')
+      expect(url).toContain('client_id=test-client-id')
+      expect(url).toContain('redirect_uri=http%3A%2F%2Flocalhost%3A3456%2Fcallback')
       expect(url).toContain('response_type=code')
       expect(url).toContain('state=') // Should have a state parameter
-      expect(url).toContain('scope=workouts:read%20workouts:write')
+      expect(url).toContain('scope=workouts%3Aread+workouts%3Awrite')
     })
 
     it('should generate unique state parameter each time', () => {
