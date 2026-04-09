@@ -92,6 +92,52 @@ The app uses Fittrackee's OAuth 2.0 flow for authentication. You'll need to:
 
 Currently using Node-USB for device detection. May need vendor-specific PID/VID configuration depending on your smartwatch brand.
 
+## TODO - Implementation Tasks
+
+### Core Features (High Priority)
+- [ ] Implement robust USB device detection with fallback mechanisms
+- [ ] Complete Fittrackee OAuth 2.0 authentication flow
+- [ ] Build workout data extraction from smartwatch files
+- [ ] Create API client for Fittrackee workouts endpoint
+- [ ] Implement incremental sync logic (avoid duplicate entries)
+- [ ] Add error handling and retry mechanisms for failed syncs
+- [ ] Create local database/cache for offline workout storage
+
+### User Interface (Medium Priority)
+- [ ] Design main dashboard with recent workouts overview
+- [ ] Build settings page for Fittrackee credentials configuration
+- [ ] Add visual feedback for USB connection status
+- [ ] Implement real-time sync progress indicator
+- [ ] Create workout details modal/view
+- [ ] Add dark/light theme toggle
+
+### Testing & Quality (Medium Priority)
+- [ ] Write unit tests for USB detection logic
+- [ ] Create integration tests for Fittrackee API calls
+- [ ] Add E2E tests with mocked smartwatch data
+- [ ] Implement automated testing suite
+- [ ] Set up CI/CD pipeline for automated builds and tests
+
+### Documentation (Low Priority)
+- [ ] Add detailed API documentation
+- [ ] Create troubleshooting guide for common issues
+- [ ] Write contribution guidelines for future developers
+- [ ] Generate TypeScript type definitions
+- [ ] Add inline code comments throughout the codebase
+
+### Security & Best Practices (High Priority)
+- [ ] Securely store OAuth credentials (keychain/encrypted storage)
+- [ ] Implement input validation and sanitization
+- [ ] Add rate limiting for API requests
+- [ ] Set up logging with proper error tracking
+- [ ] Review and fix any security vulnerabilities
+
+### Performance Optimization (Low Priority)
+- [ ] Optimize USB polling interval to reduce CPU usage
+- [ ] Implement lazy loading for large workout lists
+- [ ] Add caching strategies for frequently accessed data
+- [ ] Profile and optimize bundle size
+
 ## License
 
 MIT
