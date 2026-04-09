@@ -4,8 +4,16 @@ import { contextBridge, ipcRenderer } from 'electron'
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
   detectUsbDevice: () => ipcRenderer.invoke('detect-usb-device'),
-  fittrackeeAuthenticate: (credentials: any) => ipcRenderer.invoke('fittrackee-authenticate', credentials),
-  syncWorkouts: () => ipcRenderer.invoke('sync-workouts')
+  fittrackeeSetCredentials: (clientId: string, clientSecret: string) => 
+    ipcRenderer.invoke('fittrackee-set-credentials', clientId, clientSecret),
+  fittrackeeGetAuthUrl: () => ipcRenderer.invoke('fittrackee-get-auth-url'),
+  fittrackeeExchangeCode: (code: string) => 
+    ipcRenderer.invoke('fittrackee-exchange-code', code),
+  fittrackeeCheckAuth: () => ipcRenderer.invoke('fittrackee-check-auth'),
+  syncWorkouts: (scanDirectory?: string) => 
+    ipcRenderer.invoke('sync-workouts', scanDirectory),
+  getRecentWorkouts: (limit?: number) => 
+    ipcRenderer.invoke('fittrackee-get-recent-workouts', limit)
 })
 
 export type ElectronAPI = typeof window.electron

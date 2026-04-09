@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ipcRenderer } from 'electron'
 import './index.css'
 
 interface WorkoutSummary {
@@ -15,8 +16,18 @@ function App() {
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
-    // Check USB connection on mount
+    // Check USB and auth status on mount
     checkUSB()
+    fetchRecentWorkouts()
+    
+    // Listen for USB events
+    ipcRenderer.on('usb-connected', () => {
+      setUsbConnected(true)
+    })
+    
+    return () => {
+      ipcRenderer.removeAllListeners('usb-connected')
+    }
   }, [])
 
   const checkUSB = async () => {
@@ -28,9 +39,22 @@ function App() {
     }
   }
 
+  const [authUrl, setAuthUrl] = useState<string>('')
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [clientId, setClientId] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+
   const handleFittrackeeLogin = async () => {
-    // TODO: Implement OAuth login modal
-    setFittrackeeConnected(true)
+    // Check if already authenticated
+    const authStatus = await ipcRenderer.invoke('fittrackee-check-auth')
+    
+    if (authStatus.authenticated) {
+      setFittrackeeConnected(true)
+      return
+    }
+
+    // Open OAuth flow modal
+    setShowAuthModal(true)
   }
 
   const syncWorkouts = async () => {
@@ -38,8 +62,15 @@ function App() {
     
     setSyncing(true)
     try {
-      const result = await window.electron.syncWorkouts()
-      alert(`✅ ${result.synced} entrenamendu sinkronizatu dira!`)
+      const result = await ipcRenderer.invoke('sync-workouts')
+      
+      if (result.success) {
+        alert(`✅ ${result.synced} entrenamendu sinkronizatu dira!`)
+        // Refresh recent workouts
+        fetchRecentWorkouts()
+      } else {
+        alert(`❌ Error: ${result.error}`)
+      }
     } catch (error) {
       alert('❌ Sinkronizazio errorea: ' + error)
     } finally {
@@ -47,8 +78,117 @@ function App() {
     }
   }
 
+  const fetchRecentWorkouts = async () => {
+    try {
+      const result = await ipcRenderer.invoke('fittrackee-get-recent-workouts', 10)
+      if (result.success) {
+        const workouts = result.workouts.map((w: any) => ({
+          id: w.uuid,
+          type: w.activity_type_id === 1 ? 'Run' : 
+                w.activity_type_id === 2 ? 'Ride' :
+                w.activity_type_id === 3 ? 'Walk' : 'Other',
+          duration: `${Math.round(w.moving_time / 60)} min`,
+          date: new Date(w.start_datetime).toLocaleDateString()
+        }))
+        setRecentWorkouts(workouts)
+      }
+    } catch (error) {
+      console.error('Error fetching recent workouts:', error)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
+      {/* OAuth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20 max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-4">🔐 Fittrackee Authentication</h3>
+            
+            {!authUrl ? (
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Client ID"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  className="w-full p-3 bg-black/20 rounded-lg border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                />
+                <input
+                  type="password"
+                  placeholder="Client Secret"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  className="w-full p-3 bg-black/20 rounded-lg border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  onClick={async () => {
+                    const result = await ipcRenderer.invoke('fittrackee-set-credentials', clientId, clientSecret)
+                    if (result.success) {
+                      const authResult = await ipcRenderer.invoke('fittrackee-get-auth-url')
+                      setAuthUrl(authResult.authUrl)
+                    }
+                  }}
+                  className="w-full p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium"
+                >
+                  Continue
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-gray-300 text-sm">Open this URL in your browser:</p>
+                <a 
+                  href={authUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="block p-3 bg-black/20 rounded-lg text-purple-400 break-all hover:bg-black/30 transition-colors"
+                >
+                  {authUrl}
+                </a>
+                <p className="text-gray-400 text-xs">After authorizing, click "Authorize" below</p>
+                
+                <input
+                  type="text"
+                  id="auth-code"
+                  placeholder="Authorization code (from callback URL)"
+                  ref={(el) => {
+                    if (el) el.focus()
+                  }}
+                      className="w-full p-3 bg-black/20 rounded-lg border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  onClick={async () => {
+                    const code = (document.getElementById('auth-code') as HTMLInputElement)?.value || ''
+                    if (!code) {
+                      alert('Please enter the authorization code')
+                      return
+                    }
+                    const result = await ipcRenderer.invoke('fittrackee-exchange-code', code)
+                    if (result.success) {
+                      setFittrackeeConnected(true)
+                      setShowAuthModal(false)
+                      fetchRecentWorkouts()
+                    } else {
+                      alert('Error: ' + result.error)
+                    }
+                  }}
+                  className="w-full p-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium"
+                >
+                  Authorize
+                </button>
+              </div>
+            )}
+            
+            <button
+              onClick={() => { setShowAuthModal(false); setAuthUrl('') }}
+              className="w-full mt-4 p-2 text-gray-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <header className="bg-black/30 backdrop-blur-lg border-b border-white/10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -81,17 +221,19 @@ function App() {
                   <span className="text-gray-400 text-sm">Waiting...</span>
                 )}
               </div>
-              <button
-                onClick={handleFittrackeeLogin}
-                disabled={fittrackeeConnected}
-                className={`w-full p-3 rounded-lg font-medium transition-all ${
-                  fittrackeeConnected
-                    ? 'bg-green-500/20 text-green-400 cursor-default'
-                    : 'bg-purple-600 hover:bg-purple-700 text-white'
-                }`}
-              >
-                {fittrackeeConnected ? '✓ Fittrackee Connected' : '🔐 Login with Fittrackee'}
-              </button>
+              
+              {!fittrackeeConnected ? (
+                <button
+                  onClick={handleFittrackeeLogin}
+                  className="w-full p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all"
+                >
+                  🔐 Login with Fittrackee
+                </button>
+              ) : (
+                <div className="p-3 bg-green-500/20 rounded-lg border border-green-500/30">
+                  <span className="text-green-400 text-sm font-medium">✓ Fittrackee Connected</span>
+                </div>
+              )}
             </div>
           </div>
 
