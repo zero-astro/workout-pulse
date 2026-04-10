@@ -5,9 +5,11 @@ import { fittrackeeOAuth, FittrackeeOAuthClient } from './oauth-client'
 import { initializeFittrackeeApi, FittrackeeApiClient } from './fittrackee-api-client'
 import { scanWorkouts, WorkoutData } from './workout-parser'
 import { detectUsbDevice } from './usb-detector'
+import { initializeLocalWorkoutDb } from './local-workout-db'
 
 let mainWindow: BrowserWindow | null = null
 let fittrackeeApi: FittrackeeApiClient | null = null
+const localDb = initializeLocalWorkoutDb()
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -162,6 +164,39 @@ ipcMain.handle('sync-workouts', async (_event, scanDirectory?: string) => {
     
   } catch (error) {
     console.error('[WorkoutPulse] Sync error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Get local workouts from database
+ipcMain.handle('get-local-workouts', async (_event, limit?: number) => {
+  try {
+    const workouts = localDb.getAllWorkouts({})
+    return { success: true, workouts: limit ? workouts.slice(0, limit) : workouts }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error fetching local workouts:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Get workout statistics
+ipcMain.handle('get-workout-statistics', async () => {
+  try {
+    const stats = localDb.getStatistics()
+    return { success: true, ...stats }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error getting statistics:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Open auth modal from renderer
+ipcMain.handle('open-auth-modal', async () => {
+  try {
+    mainWindow?.webContents.send('show-auth-modal')
+    return { success: true }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error opening auth modal:', error)
     return { success: false, error: error.message }
   }
 })

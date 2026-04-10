@@ -13,7 +13,14 @@ contextBridge.exposeInMainWorld('electron', {
   syncWorkouts: (scanDirectory?: string) => 
     ipcRenderer.invoke('sync-workouts', scanDirectory),
   getRecentWorkouts: (limit?: number) => 
-    ipcRenderer.invoke('fittrackee-get-recent-workouts', limit)
+    ipcRenderer.invoke('fittrackee-get-recent-workouts', limit),
+  // Local database methods
+  getLocalWorkouts: (limit?: number) => 
+    ipcRenderer.invoke('get-local-workouts', limit),
+  getWorkoutStatistics: () => 
+    ipcRenderer.invoke('get-workout-statistics'),
+  openAuthModal: () => 
+    ipcRenderer.invoke('open-auth-modal')
 })
 
 export type ElectronAPI = typeof window.electron

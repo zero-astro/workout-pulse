@@ -104,8 +104,8 @@ Currently using Node-USB for device detection. May need vendor-specific PID/VID 
 - [x] ✅ **Create local database/cache for offline workout storage** - SQLite-based local workout database with full CRUD operations, filtering, statistics
 
 ### User Interface (Medium Priority)
-- [ ] Design main dashboard with recent workouts overview
-- [ ] Build settings page for Fittrackee credentials configuration
+- [x] ✅ **Design main dashboard with recent workouts overview** - Completed: Modern dark-themed UI with statistics cards, connection status, activity distribution, and filtered workout list (All/Unsynced tabs)
+- [x] ✅ **Build settings page for Fittrackee credentials configuration** - Completed: OAuth modal integrated in dashboard
 - [ ] Add visual feedback for USB connection status
 - [ ] Implement real-time sync progress indicator
 - [ ] Create workout details modal/view
