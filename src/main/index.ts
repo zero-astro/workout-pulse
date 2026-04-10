@@ -19,7 +19,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, '../preload/index.js')
-    }
+    },
+    menuBarVisible: false
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
