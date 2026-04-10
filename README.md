@@ -109,6 +109,7 @@ Currently using Node-USB for device detection. May need vendor-specific PID/VID 
 - [x] ✅ **Add visual feedback for USB connection status** - Completed: Animated pulsing indicators, real-time detection state with spinning icons, enhanced header badge with color transitions
 - [x] ✅ **Implement real-time sync progress indicator** - Completed: Animated progress bar with percentage display, current/total counter, smooth CSS transitions, IPC event listeners for live updates
 - [x] ✅ **Create workout details modal/view** - Completed: Full-screen modal with comprehensive workout stats (duration, distance, calories, elevation, heart rate zones), device info, timeline, synced status indicator, responsive grid layout
+- [x] ✅ **Add dark/light theme toggle with 3-state system** - Completed: Auto/Dark/Light modes, system preference detection, smooth transitions between themes, full UI color adaptation for both light and dark modes
 - [ ] Add dark/light theme toggle
 
 ### Testing & Quality (Medium Priority)
