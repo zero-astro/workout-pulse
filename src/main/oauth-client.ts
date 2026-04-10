@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { app } from 'electron'
+import { credentialsManager } from './credentials-manager'
 
 export interface OAuthCredentials {
   clientId: string
@@ -26,17 +27,17 @@ export class FittrackeeOAuthClient extends EventEmitter {
   private redirectUri: string = 'http://localhost:3456/callback'
   private state: string = ''
   private server: any // Electron net module or http server
-  
+
   // OAuth endpoints for Fittrackee
   private readonly authUrl = 'https://api.fittrackee.org/oauth/authorize'
   private readonly tokenUrl = 'https://api.fittrackee.org/oauth/token'
-  
+
   // Storage paths
   private credentialsPath: string = ''
 
   constructor() {
     super()
-    
+
     // Initialize storage path
     if (app) {
       this.credentialsPath = path.join(
@@ -47,7 +48,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
       // Fallback for testing without Electron
       this.credentialsPath = path.join(os.homedir(), '.workout-pulse', 'credentials.json')
     }
-    
+
     // Ensure directory exists
     const dir = path.dirname(this.credentialsPath)
     if (!fs.existsSync(dir)) {
@@ -56,76 +57,103 @@ export class FittrackeeOAuthClient extends EventEmitter {
   }
 
   /**
-   * Set OAuth credentials from environment or config
+   * Set OAuth credentials from environment or config with validation and secure storage
    */
-  setCredentials(clientId: string, clientSecret: string): void {
+  async setCredentials(clientId: string, clientSecret: string): Promise<void> {
+    // Validate credential format before storing
+    try {
+      credentialsManager.validateCredentials(clientId, clientSecret)
+    } catch (error) {
+      console.error('[OAuthClient] Invalid credentials:', error.message)
+      throw error
+    }
+
     this.clientId = clientId
     this.clientSecret = clientSecret
-    
-    console.log('[WorkoutPulse] OAuth credentials configured')
+
+    // Store credentials securely using CredentialsManager
+    try {
+      await credentialsManager.storeOAuthCredentials(clientId, clientSecret)
+      console.log('[WorkoutPulse] OAuth credentials configured and stored securely')
+    } catch (error) {
+      console.error('[WorkoutPulse] Failed to store credentials:', error)
+      throw new Error('Failed to store OAuth credentials securely')
+    }
   }
 
   /**
-   * Load stored credentials from secure storage
+   * Load stored OAuth credentials from secure storage
    */
-  loadStoredCredentials(): OAuthCredentials | null {
+  async loadStoredCredentials(): Promise<OAuthCredentials | null> {
     try {
-      if (fs.existsSync(this.credentialsPath)) {
-        const data = fs.readFileSync(this.credentialsPath, 'utf8')
-        const credentials: OAuthCredentials = JSON.parse(data)
-        
-        // Check if token is expired
-        if (credentials.tokenExpiry && Date.now() > credentials.tokenExpiry) {
-          console.log('[WorkoutPulse] Stored token expired, requesting refresh')
-          this.emit('expired', {
-            type: 'expired' as const,
-            timestamp: Date.now()
-          })
-          return null
-        }
-        
-        console.log('[WorkoutPulse] Loaded stored credentials (token valid)')
-        return credentials
+      // Use centralized CredentialsManager for loading
+      const stored = await credentialsManager.getOAuthCredentials()
+
+      if (!stored) {
+        console.log('[WorkoutPulse] No OAuth credentials found')
+        return null
       }
+
+      // Note: This returns client credentials, not access tokens
+      // Access tokens should be stored separately in secure storage (e.g., electron-store)
+      const credentials: OAuthCredentials = {
+        clientId: stored.clientId,
+        clientSecret: stored.clientSecret
+      }
+
+      console.log('[WorkoutPulse] Loaded stored OAuth credentials')
+      return credentials
     } catch (error) {
       console.error('[WorkoutPulse] Error loading credentials:', error)
+      return null
     }
-    
-    return null
   }
 
   /**
-   * Save credentials to secure storage
+   * Save access token and refresh token to secure storage
    */
-  saveCredentials(credentials: OAuthCredentials): void {
+  async saveCredentials(credentials: OAuthCredentials): Promise<void> {
     try {
-      // Encrypt sensitive data before storing (basic encryption for demo)
-      const encryptedCredentials = this.encryptCredentials(credentials)
-      
+      // Store access tokens separately from client credentials
+      // In production, use electron-store with encryption or native keychain
+      const tokenData = {
+        accessToken: credentials.accessToken,
+        refreshToken: credentials.refreshToken,
+        tokenExpiry: credentials.tokenExpiry
+      }
+
+      // Write to secure location (owner-only permissions)
       fs.writeFileSync(
-        this.credentialsPath,
-        JSON.stringify(encryptedCredentials, null, 2),
-        { mode: 0o600 } // Only owner can read/write
+        this.credentialsPath.replace('.json', '_tokens.json'),
+        JSON.stringify(tokenData, null, 2),
+        { mode: 0o600 }
       )
-      
-      console.log('[WorkoutPulse] Credentials saved securely')
+
+      console.log('[WorkoutPulse] Access tokens saved securely')
     } catch (error) {
       console.error('[WorkoutPulse] Error saving credentials:', error)
-      throw new Error('Failed to save credentials securely')
+      throw new Error('Failed to save access tokens securely')
     }
   }
 
   /**
-   * Remove stored credentials (for logout)
+   * Remove stored credentials and tokens (for logout)
    */
-  removeStoredCredentials(): void {
+  async removeStoredCredentials(): Promise<void> {
     try {
-      if (fs.existsSync(this.credentialsPath)) {
-        fs.unlinkSync(this.credentialsPath)
-        console.log('[WorkoutPulse] Credentials removed')
+      // Remove OAuth client credentials
+      await credentialsManager.removeOAuthCredentials()
+
+      // Remove access token file
+      const tokenPath = this.credentialsPath.replace('.json', '_tokens.json')
+      if (fs.existsSync(tokenPath)) {
+        fs.unlinkSync(tokenPath)
       }
+
+      console.log('[WorkoutPulse] All credentials removed securely')
     } catch (error) {
       console.error('[WorkoutPulse] Error removing credentials:', error)
+      throw new Error('Failed to remove all credentials')
     }
   }
 
@@ -135,7 +163,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
   getAuthorizationUrl(): string {
     // Generate cryptographically secure random state
     this.state = crypto.randomBytes(32).toString('hex')
-    
+
     const params = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
@@ -145,7 +173,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
     })
 
     const url = `${this.authUrl}?${params.toString()}`
-    
+
     console.log('[WorkoutPulse] Authorization URL generated:', url)
     return url
   }
@@ -165,7 +193,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
       })
 
       const tokens = JSON.parse(response)
-      
+
       const credentials: OAuthCredentials = {
         clientId: this.clientId,
         clientSecret: this.clientSecret,
@@ -178,7 +206,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
       this.saveCredentials(credentials)
 
       console.log('[WorkoutPulse] Token exchanged successfully')
-      
+
       this.emit('token-exchanged', {
         type: 'token-exchanged' as const,
         credentials,
@@ -186,7 +214,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
       })
 
       return credentials
-      
+
     } catch (error) {
       console.error('[WorkoutPulse] Error exchanging code for token:', error)
       throw new Error(`Token exchange failed: ${error.message}`)
@@ -206,7 +234,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
       })
 
       const tokens = JSON.parse(response)
-      
+
       // Load existing credentials to preserve client ID/secret
       const storedCreds = this.loadStoredCredentials() || {
         clientId: this.clientId,
@@ -223,9 +251,9 @@ export class FittrackeeOAuthClient extends EventEmitter {
       this.saveCredentials(newCredentials)
 
       console.log('[WorkoutPulse] Token refreshed successfully')
-      
+
       return newCredentials
-      
+
     } catch (error) {
       console.error('[WorkoutPulse] Error refreshing token:', error)
       throw new Error(`Token refresh failed: ${error.message}`)
@@ -238,13 +266,13 @@ export class FittrackeeOAuthClient extends EventEmitter {
   private async makeTokenRequest(params: Record<string, string>): Promise<string> {
     // In production with Electron, use electron/net module
     // For now, this is a placeholder that would be replaced with actual implementation
-    
+
     const formData = new URLSearchParams(params).toString()
-    
+
     // This would be replaced with actual HTTP request in Electron environment
     console.log('[WorkoutPulse] Would make token request to:', this.tokenUrl)
     console.log('[WorkoutPulse] Request params:', Object.keys(params))
-    
+
     // Mock response for development (remove in production)
     return JSON.stringify({
       access_token: 'mock_access_token_' + Date.now(),
@@ -252,7 +280,7 @@ export class FittrackeeOAuthClient extends EventEmitter {
       expires_in: 3600,
       token_type: 'Bearer'
     })
-    
+
     // Production implementation would look like:
     /*
     const { net } = require('electron')
@@ -264,15 +292,15 @@ export class FittrackeeOAuthClient extends EventEmitter {
       },
       body: Buffer.from(formData)
     })
-    
+
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = []
-      
+
       request.on('response', (response) => {
         response.on('data', (chunk) => chunks.push(chunk))
         response.on('end', () => resolve(Buffer.concat(chunks).toString()))
       })
-      
+
       request.on('error', (err) => reject(err))
       request.end()
     })
@@ -284,34 +312,34 @@ export class FittrackeeOAuthClient extends EventEmitter {
    */
   async validateToken(): Promise<boolean> {
     const credentials = this.loadStoredCredentials()
-    
+
     if (!credentials || !credentials.accessToken) {
       console.log('[WorkoutPulse] No access token found')
       return false
     }
-    
+
     // Check expiry
     if (credentials.tokenExpiry && Date.now() > credentials.tokenExpiry) {
       console.log('[WorkoutPulse] Access token expired')
       return false
     }
-    
+
     // Optionally validate by making a test API call
     try {
       const isValid = await this.testApiConnection(credentials.accessToken)
-      
+
       if (!isValid) {
         console.log('[WorkoutPulse] Token validation failed, attempting refresh')
-        
+
         // Try to refresh the token
         if (credentials.refreshToken) {
           await this.refreshToken(credentials.refreshToken)
           return true
         }
       }
-      
+
       return isValid
-      
+
     } catch (error) {
       console.error('[WorkoutPulse] Token validation error:', error)
       return false
@@ -324,10 +352,10 @@ export class FittrackeeOAuthClient extends EventEmitter {
   private async testApiConnection(token: string): Promise<boolean> {
     // This would make a real API call to validate the token
     console.log('[WorkoutPulse] Testing API connection with token')
-    
+
     // Mock validation for development
     return true
-    
+
     /*
     const response = await fetch('https://api.fittrackee.org/api/user/me', {
       headers: {
@@ -335,50 +363,12 @@ export class FittrackeeOAuthClient extends EventEmitter {
         'Content-Type': 'application/json'
       }
     })
-    
+
     return response.ok
     */
   }
 
-  /**
-   * Encrypt credentials before storage (basic encryption)
-   */
-  private encryptCredentials(credentials: OAuthCredentials): any {
-    // In production, use proper encryption (e.g., electron-store with crypto)
-    // This is a simplified version for demonstration
-    
-    // Skip encryption in test environment to avoid IV errors
-    if (process.env.NODE_ENV === 'test') {
-      return {
-        ...credentials,
-        encryptedData: Buffer.from(JSON.stringify(credentials)).toString('base64'),
-        iv: 'test-iv-for-mock-only'
-      }
-    }
-    
-    const key = process.env.ENCRYPTION_KEY || 'default-key-change-in-production'
-    const iv = crypto.randomBytes(16).toString('hex').slice(0, 16)
-    
-    try {
-      const cipher = crypto.createCipheriv(
-        'aes-256-cbc',
-        Buffer.from(key, 'utf8'),
-        Buffer.from(iv, 'hex')
-      )
-      
-      let encrypted = cipher.update(JSON.stringify(credentials))
-      encrypted = Buffer.concat([encrypted, cipher.final()])
-      
-      return {
-        ...credentials,
-        iv: iv,
-        encryptedData: encrypted.toString('base64')
-      }
-    } catch (error) {
-      console.error('[WorkoutPulse] Encryption failed:', error)
-      throw new Error('Credential encryption failed')
-    }
-  }
+
 
   /**
    * Get current authorization state

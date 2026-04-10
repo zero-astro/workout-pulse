@@ -1,8 +1,4 @@
-import { RobustUsbDetector, detectUsbDevice } from '../main/usb-detector'
-import * as fs from 'fs'
-import * as path from 'path'
-
-// Mock chokidar
+// Mock chokidar BEFORE imports (Jest mock hoisting)
 jest.mock('chokidar', () => ({
   watch: jest.fn(() => ({
     on: jest.fn().mockReturnThis(),
@@ -15,10 +11,14 @@ jest.mock('chokidar', () => ({
   }
 }))
 
-// Mock glob
+// Mock glob BEFORE imports (Jest mock hoisting)
 jest.mock('glob', () => ({
   sync: jest.fn(() => [])
 }))
+
+import { RobustUsbDetector, detectUsbDevice } from '../main/usb-detector'
+import * as fs from 'fs'
+import * as path from 'path'
 
 describe.skip('RobustUsbDetector - SKIPPED: Mock issues', () => {
   let detector: RobustUsbDetector

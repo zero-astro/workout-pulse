@@ -127,9 +127,9 @@ Currently using Node-USB for device detection. May need vendor-specific PID/VID 
 - [ ] Add inline code comments throughout the codebase
 
 ### Security & Best Practices (High Priority)
-- [ ] Securely store OAuth credentials (keychain/encrypted storage)
-- [ ] Implement input validation and sanitization
-- [ ] Add rate limiting for API requests
+- [x] ✅ **Securely store OAuth credentials** - Completed: AES-256-CBC encryption with PBKDF2 key derivation, system-specific master keys, secure file permissions (0o600), CredentialsManager class
+- [x] ✅ **Implement input validation and sanitization** - Completed: SecurityUtils module with email/URL/UUID validation, SQL injection detection, XSS pattern matching, workout data validation
+- [ ] Add rate limiting for API requests - In progress: Rate limiter utility created, needs integration into API client
 - [ ] Set up logging with proper error tracking
 - [ ] Review and fix any security vulnerabilities
 
