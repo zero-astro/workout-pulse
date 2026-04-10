@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ipcRenderer } from 'electron'
+import { WorkoutDetails } from './WorkoutDetails'
 
 interface LocalWorkout {
   id: string
@@ -32,6 +33,7 @@ export function Dashboard() {
   const [syncing, setSyncing] = useState(false)
   const [activeTab, setActiveTab] = useState<'all' | 'unsynced'>('all')
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, percentage: 0 })
+  const [selectedWorkout, setSelectedWorkout] = useState<LocalWorkout | null>(null)
 
   useEffect(() => {
     checkStatus()
@@ -367,7 +369,8 @@ export function Dashboard() {
               {filteredWorkouts.map((workout) => (
                 <div 
                   key={workout.id} 
-                  className={`flex items-center justify-between p-4 rounded-lg transition-all ${
+                  onClick={() => setSelectedWorkout(workout)}
+                  className={`flex items-center justify-between p-4 rounded-lg transition-all cursor-pointer hover:scale-[1.02] ${
                     workout.syncedAt ? 'bg-black/20' : 'bg-yellow-500/10 border border-yellow-500/30'
                   }`}
                 >
