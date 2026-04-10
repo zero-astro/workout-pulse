@@ -141,7 +141,7 @@ class Logger {
   }
 
   public info(module: string, message: string, data?: any): void {
-    this.log('info', module, daily, message, data)
+    this.log('info', module, message, data)
   }
 
   public warn(module: string, message: string, data?: any): void {
