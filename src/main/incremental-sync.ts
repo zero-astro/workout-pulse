@@ -280,9 +280,13 @@ export class IncrementalSyncManager extends EventEmitter {
     let skippedCount = 0
     let failedCount = 0
 
-    for (const filePath of filePaths) {
+    for (let i = 0; i < filePaths.length; i++) {
+      const filePath = filePaths[i]
       const result = await this.processWorkout(filePath, options)
       results.push(result)
+      
+      // Emit progress event after each workout
+      this.emit('progress', { current: i + 1, total: filePaths.length })
       
       if (result.success && !result.skipped) {
         successCount++

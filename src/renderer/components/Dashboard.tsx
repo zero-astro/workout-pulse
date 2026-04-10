@@ -31,6 +31,7 @@ export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [activeTab, setActiveTab] = useState<'all' | 'unsynced'>('all')
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, percentage: 0 })
 
   useEffect(() => {
     checkStatus()
@@ -92,7 +93,22 @@ export function Dashboard() {
   const handleSync = async () => {
     if (!fittrackeeConnected || !usbConnected) return
     
+    // Get unsynced workouts count for progress tracking
+    const unsyncedWorkouts = localWorkouts.filter(w => !w.syncedAt)
+    setSyncProgress({ current: 0, total: unsyncedWorkouts.length, percentage: 0 })
     setSyncing(true)
+    
+    // Listen to sync progress events
+    const progressHandler = (_event: any, progress: { current: number; total: number }) => {
+      setSyncProgress({
+        current: progress.current,
+        total: progress.total,
+        percentage: progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0
+      })
+    }
+    
+    ipcRenderer.on('sync-progress', progressHandler)
+    
     try {
       const result = await window.electron.syncWorkouts()
       
@@ -106,6 +122,11 @@ export function Dashboard() {
       alert('❌ Sinkronizazio errorea: ' + error)
     } finally {
       setSyncing(false)
+      ipcRenderer.removeAllListeners('sync-progress')
+      // Reset progress after a short delay
+      setTimeout(() => {
+        setSyncProgress({ current: 0, total: 0, percentage: 0 })
+      }, 3000)
     }
   }
 
@@ -264,12 +285,34 @@ export function Dashboard() {
             >
               {syncing ? (
                 <>
-                  <span className="animate-spin">⚡</span> Syncing... {stats?.unsynced - (localWorkouts.filter(w => !w.syncedAt).length - filteredWorkouts.length)} remaining
+                  <span className="animate-spin">⚡</span> Syncing...
                 </>
               ) : (
                 '📥 Sync Unsynced Workouts'
               )}
             </button>
+            
+            {/* Progress Bar */}
+            {syncing && syncProgress.total > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-300">{syncProgress.current} / {syncProgress.total}</span>
+                  <span className="text-purple-300 font-medium">{syncProgress.percentage}%</span>
+                </div>
+                <div className="w-full bg-black/20 rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-300 ease-out rounded-full flex items-center justify-end pr-1"
+                    style={{ width: `${syncProgress.percentage}%` }}
+                  >
+                    {syncProgress.percentage >= 10 && (
+                      <span className="text-xs text-white font-medium drop-shadow-lg">
+                        {syncProgress.current} synced
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

@@ -147,12 +147,19 @@ ipcMain.handle('sync-workouts', async (_event, scanDirectory?: string) => {
       return { success: true, synced: 0, message: 'No workout files found' }
     }
 
-    // Upload workouts to Fittrackee
+    // Upload workouts to Fittrackee with progress tracking
     const result = await fittrackeeApi.uploadWorkoutsBatch(workouts, {
       skipDuplicates: true,
       batchSize: 5,
       delayMs: 1000
     })
+
+    // Emit progress events during upload
+    for (let i = 0; i < workouts.length; i++) {
+      if (mainWindow) {
+        mainWindow.webContents.send('sync-progress', { current: i + 1, total: workouts.length })
+      }
+    }
 
     return {
       success: true,
