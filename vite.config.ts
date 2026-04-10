@@ -1,40 +1,25 @@
-import { defineConfig } from 'electron-vite'
+import { resolve } from 'path'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
     build: {
-      lib: {
-        entry: './src/main/index.ts',
-        formats: ['cjs']
-      },
       rollupOptions: {
-        external: ['electron']
+        external: ['better-sqlite3']
       }
     },
-    plugins: []
+    plugins: [externalizeDepsPlugin()]
   },
   preload: {
-    build: {
-      lib: {
-        entry: './src/main/preload.ts',
-        formats: ['cjs']
-      },
-      rollupOptions: {
-        input: './src/main/preload.ts'
-      }
-    },
-    plugins: []
+    plugins: [externalizeDepsPlugin()]
   },
   renderer: {
-    build: {
-      outDir: 'dist/renderer'
+    root: 'src/renderer',
+    server: {
+      port: 5173,
+      strictPort: true // Portua okupatuta badago errore eman, ez aldatu 5174-ra
     },
-    plugins: [react()],
-    resolve: {
-      alias: {
-        '@': '/src/renderer'
-      }
-    }
+    plugins: [react()]
   }
 })

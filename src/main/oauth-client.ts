@@ -7,6 +7,7 @@ import { app } from 'electron'
 import { credentialsManager } from './credentials-manager'
 import { logger } from './logger'
 
+
 export interface OAuthCredentials {
   clientId: string
   clientSecret: string

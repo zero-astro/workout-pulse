@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { ipcRenderer } from 'electron'
 import { WorkoutDetails } from './WorkoutDetails'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -51,12 +50,12 @@ export function Dashboard() {
       setUsbConnected(false)
     }
     
-    ipcRenderer.on('usb-connected', handleUsbConnected)
-    ipcRenderer.on('usb-disconnected', handleUsbDisconnected)
+    const removeUsbConn = window.electron.on('usb-connected', handleUsbConnected)
+    const removeUsbDisc = window.electron.on('usb-disconnected', handleUsbDisconnected)
     
     return () => {
-      ipcRenderer.removeAllListeners('usb-connected')
-      ipcRenderer.removeAllListeners('usb-disconnected')
+      removeUsbConn()
+      removeUsbDisc()
     }
   }, [])
 
@@ -64,7 +63,7 @@ export function Dashboard() {
     try {
       const [usbResult, authResult] = await Promise.all([
         window.electron.detectUsbDevice(),
-        ipcRenderer.invoke('fittrackee-check-auth')
+        window.electron.fittrackeeCheckAuth()
       ])
       
       setUsbConnected(usbResult.connected)
@@ -111,7 +110,7 @@ export function Dashboard() {
       })
     }
     
-    ipcRenderer.on('sync-progress', progressHandler)
+    const removeProgress = window.electron.on('sync-progress', progressHandler)
     
     try {
       const result = await window.electron.syncWorkouts()
@@ -126,7 +125,7 @@ export function Dashboard() {
       alert('❌ Sinkronizazio errorea: ' + error)
     } finally {
       setSyncing(false)
-      ipcRenderer.removeAllListeners('sync-progress')
+      removeProgress()
       // Reset progress after a short delay
       setTimeout(() => {
         setSyncProgress({ current: 0, total: 0, percentage: 0 })

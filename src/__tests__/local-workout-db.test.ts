@@ -56,7 +56,7 @@ jest.mock('better-sqlite3', () => {
 // Set test environment
 process.env.NODE_ENV = 'test'
 
-describe.skip('LocalWorkoutDatabase - SKIPPED: Mock issues', () => {
+describe('LocalWorkoutDatabase', () => {
   let db: LocalWorkoutDatabase
 
   beforeEach(() => {

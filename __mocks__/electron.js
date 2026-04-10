@@ -30,5 +30,10 @@ module.exports = {
     openExternal: jest.fn(),
     showItemInFolder: jest.fn(),
     beep: jest.fn()
+  },
+  safeStorage: {
+    isEncryptionAvailable: jest.fn(() => true),
+    encryptString: jest.fn((s) => Buffer.from(s)),
+    decryptString: jest.fn((b) => b.toString())
   }
 }

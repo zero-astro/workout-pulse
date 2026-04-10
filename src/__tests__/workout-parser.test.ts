@@ -9,10 +9,11 @@ import * as path from 'path'
 // Mock fit-file-parser library
 jest.mock('fit-file-parser', () => {
   return {
-    Parser: class MockParser {
-      parse(buffer: Buffer) {
+    __esModule: true,
+    default: class MockParser {
+      parse(buffer: Buffer, callback?: (err: any, data: any) => void) {
         // Simulate parsed FIT data for a typical run workout
-        return {
+        const data = {
           records: [
             {
               name: 'session',
@@ -41,6 +42,8 @@ jest.mock('fit-file-parser', () => {
             }
           ]
         }
+        if (callback) callback(null, data)
+        return data
       }
     }
   }

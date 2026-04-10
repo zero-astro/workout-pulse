@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const Database = require('better-sqlite3')
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
@@ -40,7 +41,7 @@ export interface WorkoutFilterOptions {
 }
 
 export class LocalWorkoutDatabase {
-  private db: Database.Database
+  private db: any
   private dbPath: string
 
   constructor() {
