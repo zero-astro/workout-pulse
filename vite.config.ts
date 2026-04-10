@@ -21,9 +21,7 @@ export default defineConfig({
         formats: ['cjs']
       },
       rollupOptions: {
-        output: {
-          entryFileNames: 'preload.js'
-        }
+        input: './src/main/preload.ts'
       }
     },
     plugins: []
