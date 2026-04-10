@@ -253,12 +253,14 @@ export class FittrackeeApiClient extends EventEmitter {
 
     // Get existing workouts if checking for duplicates
     let existingWorkouts: FittrackeeWorkout[] = []
-    if (skipDuplicates) {
+    let shouldCheckDuplicates = skipDuplicates
+    
+    if (shouldCheckDuplicates) {
       try {
         existingWorkouts = await this.getRecentWorkouts(100)
       } catch (error) {
         console.warn('[FittrackeeAPI] Could not fetch existing workouts, skipping duplicate check')
-        skipDuplicates = false
+        shouldCheckDuplicates = false
       }
     }
 
@@ -266,7 +268,7 @@ export class FittrackeeApiClient extends EventEmitter {
       const workout = workouts[i]
       
       // Check for duplicates
-      if (skipDuplicates) {
+      if (shouldCheckDuplicates) {
         const exists = existingWorkouts.some(w => w.uuid === workout.id)
         if (exists) {
           console.log('[FittrackeeAPI] Workout already exists, skipping:', workout.id)
@@ -279,7 +281,7 @@ export class FittrackeeApiClient extends EventEmitter {
         result.success++
         
         // Add to existing list for duplicate checking
-        if (skipDuplicates) {
+        if (shouldCheckDuplicates) {
           const uploaded = await this.getWorkout(workout.id)
           if (uploaded) {
             existingWorkouts.push(uploaded)

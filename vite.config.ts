@@ -21,7 +21,9 @@ export default defineConfig({
         formats: ['cjs']
       },
       rollupOptions: {
-        external: ['electron']
+        output: {
+          entryFileNames: 'preload.js'
+        }
       }
     },
     plugins: []

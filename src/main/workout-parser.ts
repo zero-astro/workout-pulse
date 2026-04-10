@@ -2,6 +2,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { parseDateTime } from './utils' // Helper function
 import * as FIT from 'fit-file-parser'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const Stats = fs.Stats
 
 export interface WorkoutData {
   id: string
@@ -65,7 +67,11 @@ function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | nul
     
     try {
       // Parse FIT file using the library
-      parser = new FIT.Parser()
+      const ParserClass = (FIT as any).default
+      if (!ParserClass) {
+        throw new Error('FIT.Parser not found in fit-file-parser')
+      }
+      parser = new ParserClass()
       const parsedData = parser.parse(buffer)
       records = parsedData.records || []
       
