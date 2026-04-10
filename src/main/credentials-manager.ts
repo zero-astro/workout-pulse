@@ -2,6 +2,7 @@ import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { logger } from './logger'
 
 // Encryption configuration
 const ALGORITHM = 'aes-256-cbc'
@@ -120,9 +121,9 @@ export class CredentialsManager {
         { mode: 0o600 }
       )
       
-      console.log('[CredentialsManager] OAuth credentials stored securely')
+      logger.info('CredentialsManager', 'OAuth credentials stored securely')
     } catch (error) {
-      console.error('[CredentialsManager] Error storing credentials:', error)
+      logger.error('CredentialsManager', 'Error storing credentials', { error: error.message })
       throw new Error('Failed to store credentials securely')
     }
   }
@@ -141,7 +142,7 @@ export class CredentialsManager {
       
       return JSON.parse(decrypted)
     } catch (error) {
-      console.error('[CredentialsManager] Error retrieving credentials:', error)
+      logger.error('CredentialsManager', 'Error retrieving credentials', { error: error.message })
       // Return null on any decryption error (credentials may be corrupted)
       return null
     }
@@ -154,10 +155,10 @@ export class CredentialsManager {
     try {
       if (fs.existsSync(this.credentialsPath)) {
         fs.unlinkSync(this.credentialsPath)
-        console.log('[CredentialsManager] OAuth credentials removed')
+        logger.info('CredentialsManager', 'OAuth credentials removed')
       }
     } catch (error) {
-      console.error('[CredentialsManager] Error removing credentials:', error)
+      logger.error('CredentialsManager', 'Error removing credentials', { error: error.message })
       throw new Error('Failed to remove credentials')
     }
   }

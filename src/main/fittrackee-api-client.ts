@@ -6,6 +6,7 @@ import { FittrackeeOAuthClient, OAuthCredentials } from './oauth-client'
 import { WorkoutData } from './workout-parser'
 import { apiRetryHandler, circuitBreaker } from './api-retry-handler'
 import { securityUtils } from './security-utils'
+import { logger } from './logger'
 
 export interface FittrackeeWorkout {
   uuid: string
@@ -170,13 +171,14 @@ export class FittrackeeApiClient extends EventEmitter {
     
     if (!validation.valid) {
       const errorMsg = `Invalid workout data: ${validation.errors.join(', ')}`
-      console.error('[FittrackeeAPI]', errorMsg)
+      logger.error('FittrackeeAPI', 'Invalid workout data', { errors: validation.errors, workoutId: workout.id })
       throw new Error(errorMsg)
     }
     
     // Check for injection patterns in workout metadata
     const nameSanitized = securityUtils.sanitizeString(workout.deviceName || '')
     if (securityUtils.hasSqlInjection(nameSanitized) || securityUtils.hasXssPattern(nameSanitized)) {
+      logger.error('FittrackeeAPI', 'Invalid characters detected in device name', { deviceName: workout.deviceName })
       throw new Error('Invalid characters detected in device name')
     }
 
@@ -332,6 +334,7 @@ export class FittrackeeApiClient extends EventEmitter {
   ): Promise<string> {
     // Check rate limit before making request
     if (!this.rateLimiter.isAllowed('api-request')) {
+      logger.warn('FittrackeeAPI', 'Rate limit exceeded')
       throw new Error('Rate limit exceeded. Please slow down API requests.')
     }
 

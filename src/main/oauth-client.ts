@@ -5,6 +5,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { app } from 'electron'
 import { credentialsManager } from './credentials-manager'
+import { logger } from './logger'
 
 export interface OAuthCredentials {
   clientId: string
@@ -70,13 +71,13 @@ export class FittrackeeOAuthClient extends EventEmitter {
 
     this.clientId = clientId
     this.clientSecret = clientSecret
-
+    
     // Store credentials securely using CredentialsManager
     try {
       await credentialsManager.storeOAuthCredentials(clientId, clientSecret)
-      console.log('[WorkoutPulse] OAuth credentials configured and stored securely')
+      logger.info('OAuthClient', 'OAuth credentials configured and stored securely')
     } catch (error) {
-      console.error('[WorkoutPulse] Failed to store credentials:', error)
+      logger.error('OAuthClient', 'Failed to store credentials', { error: error.message })
       throw new Error('Failed to store OAuth credentials securely')
     }
   }
@@ -88,23 +89,23 @@ export class FittrackeeOAuthClient extends EventEmitter {
     try {
       // Use centralized CredentialsManager for loading client credentials
       const stored = await credentialsManager.getOAuthCredentials()
-      
+
       if (!stored) {
-        console.log('[WorkoutPulse] No OAuth credentials found')
+        logger.debug('OAuthClient', 'No OAuth credentials found')
         return null
       }
-      
+
       // Note: This returns client credentials, not access tokens
       // Access tokens should be stored separately in secure storage (e.g., electron-store)
       const credentials: OAuthCredentials = {
         clientId: stored.clientId,
         clientSecret: stored.clientSecret
       }
-      
-      console.log('[WorkoutPulse] Loaded stored OAuth credentials')
+
+      logger.info('OAuthClient', 'Loaded stored OAuth credentials')
       return credentials
     } catch (error) {
-      console.error('[WorkoutPulse] Error loading credentials:', error)
+      logger.error('OAuthClient', 'Error loading credentials', { error: error.message })
       return null
     }
   }
@@ -117,11 +118,11 @@ export class FittrackeeOAuthClient extends EventEmitter {
       if (!fs.existsSync(this.credentialsPath.replace('.json', '_tokens.json'))) {
         return null
       }
-      
+
       const data = fs.readFileSync(this.credentialsPath.replace('.json', '_tokens.json'), 'utf8')
       return JSON.parse(data)
     } catch (error) {
-      console.error('[WorkoutPulse] Error loading access tokens:', error)
+      logger.error('OAuthClient', 'Error loading access tokens', { error: error.message })
       return null
     }
   }
@@ -146,9 +147,9 @@ export class FittrackeeOAuthClient extends EventEmitter {
         { mode: 0o600 }
       )
 
-      console.log('[WorkoutPulse] Access tokens saved securely')
+      logger.info('OAuthClient', 'Access tokens saved securely')
     } catch (error) {
-      console.error('[WorkoutPulse] Error saving credentials:', error)
+      logger.error('OAuthClient', 'Error saving credentials', { error: error.message })
       throw new Error('Failed to save access tokens securely')
     }
   }
@@ -167,9 +168,9 @@ export class FittrackeeOAuthClient extends EventEmitter {
         fs.unlinkSync(tokenPath)
       }
 
-      console.log('[WorkoutPulse] All credentials removed securely')
+      logger.info('OAuthClient', 'All credentials removed securely')
     } catch (error) {
-      console.error('[WorkoutPulse] Error removing credentials:', error)
+      logger.error('OAuthClient', 'Error removing credentials', { error: error.message })
       throw new Error('Failed to remove all credentials')
     }
   }
