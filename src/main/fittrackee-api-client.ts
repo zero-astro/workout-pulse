@@ -5,6 +5,7 @@ import * as path from 'path'
 import { FittrackeeOAuthClient, OAuthCredentials } from './oauth-client'
 import { WorkoutData } from './workout-parser'
 import { apiRetryHandler, circuitBreaker } from './api-retry-handler'
+import { securityUtils } from './security-utils'
 
 export interface FittrackeeWorkout {
   uuid: string
@@ -35,6 +36,9 @@ export class FittrackeeApiClient extends EventEmitter {
   private baseUrl: string = 'https://api.fittrackee.org'
   private accessToken: string = ''
   private oauthClient: FittrackeeOAuthClient
+  
+  // Rate limiter for API requests (100 requests per minute)
+  private rateLimiter = securityUtils.createRateLimiter(100, 60000)
   
   // Activity type mapping (Fittrackee activity types)
   private readonly activityTypeMap: Record<string, number> = {
@@ -151,16 +155,38 @@ export class FittrackeeApiClient extends EventEmitter {
   }
 
   /**
-   * Upload a new workout to Fittrackee with retry logic and circuit breaker
+   * Upload a new workout to Fittrackee with retry logic, circuit breaker, and input validation
    */
   async uploadWorkout(workout: WorkoutData): Promise<FittrackeeWorkout> {
+    // Validate workout data before processing (security best practices)
+    const validation = securityUtils.validateWorkoutData({
+      uuid: workout.id,
+      start_datetime: workout.startTime.toISOString(),
+      end_datetime: workout.endTime.toISOString(),
+      distance: workout.distance,
+      moving_time: workout.duration,
+      calories: workout.calories
+    })
+    
+    if (!validation.valid) {
+      const errorMsg = `Invalid workout data: ${validation.errors.join(', ')}`
+      console.error('[FittrackeeAPI]', errorMsg)
+      throw new Error(errorMsg)
+    }
+    
+    // Check for injection patterns in workout metadata
+    const nameSanitized = securityUtils.sanitizeString(workout.deviceName || '')
+    if (securityUtils.hasSqlInjection(nameSanitized) || securityUtils.hasXssPattern(nameSanitized)) {
+      throw new Error('Invalid characters detected in device name')
+    }
+
     // Map local WorkoutData to Fittrackee format
     const fittrackeeWorkout: FittrackeeWorkout = {
       uuid: workout.id,
       activity_type_id: this.activityTypeMap[workout.type] || 99,
       is_outdoors: true, // Default to outdoor for now
       name: path.basename(workout.filePath),
-      description: `Synced from ${workout.deviceName} via WorkoutPulse`,
+      description: `Synced from ${nameSanitized} via WorkoutPulse`,
       distance: workout.distance || 0,
       moving_time: workout.duration,
       elapsed_time: workout.duration,
@@ -297,16 +323,21 @@ export class FittrackeeApiClient extends EventEmitter {
   }
 
   /**
-   * Make HTTP request to Fittrackee API
+   * Make HTTP request to Fittrackee API with rate limiting
    */
   private async makeRequest(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,
     body?: any
   ): Promise<string> {
+    // Check rate limit before making request
+    if (!this.rateLimiter.isAllowed('api-request')) {
+      throw new Error('Rate limit exceeded. Please slow down API requests.')
+    }
+
     // Ensure we have a valid token
     if (!this.accessToken) {
-      const credentials = this.oauthClient.loadStoredCredentials()
+      const credentials = await this.oauthClient.loadStoredCredentials()
       if (credentials?.accessToken) {
         this.setAccessToken(credentials)
       } else {
@@ -315,12 +346,18 @@ export class FittrackeeApiClient extends EventEmitter {
     }
 
     // Check token expiry and refresh if needed
-    const credentials = this.oauthClient.loadStoredCredentials()
-    if (credentials?.tokenExpiry && Date.now() > credentials.tokenExpiry) {
+    const credentials = await this.oauthClient.loadStoredCredentials()
+    const tokens = await this.oauthClient.loadAccessTokens()
+    
+    if (tokens?.tokenExpiry && Date.now() > tokens.tokenExpiry) {
       console.log('[FittrackeeAPI] Token expired, attempting refresh')
       try {
-        const refreshed = await this.oauthClient.refreshToken(credentials.refreshToken!)
-        this.setAccessToken(refreshed)
+        if (tokens.refreshToken) {
+          const refreshed = await this.oauthClient.refreshToken(tokens.refreshToken)
+          this.setAccessToken(refreshed)
+        } else {
+          throw new Error('No refresh token available')
+        }
       } catch (error) {
         throw new Error(`Token refresh failed: ${error.message}`)
       }

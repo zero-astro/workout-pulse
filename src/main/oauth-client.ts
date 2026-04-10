@@ -86,25 +86,42 @@ export class FittrackeeOAuthClient extends EventEmitter {
    */
   async loadStoredCredentials(): Promise<OAuthCredentials | null> {
     try {
-      // Use centralized CredentialsManager for loading
+      // Use centralized CredentialsManager for loading client credentials
       const stored = await credentialsManager.getOAuthCredentials()
-
+      
       if (!stored) {
         console.log('[WorkoutPulse] No OAuth credentials found')
         return null
       }
-
+      
       // Note: This returns client credentials, not access tokens
       // Access tokens should be stored separately in secure storage (e.g., electron-store)
       const credentials: OAuthCredentials = {
         clientId: stored.clientId,
         clientSecret: stored.clientSecret
       }
-
+      
       console.log('[WorkoutPulse] Loaded stored OAuth credentials')
       return credentials
     } catch (error) {
       console.error('[WorkoutPulse] Error loading credentials:', error)
+      return null
+    }
+  }
+
+  /**
+   * Load access tokens from secure storage
+   */
+  async loadAccessTokens(): Promise<{ accessToken?: string; refreshToken?: string; tokenExpiry?: number } | null> {
+    try {
+      if (!fs.existsSync(this.credentialsPath.replace('.json', '_tokens.json'))) {
+        return null
+      }
+      
+      const data = fs.readFileSync(this.credentialsPath.replace('.json', '_tokens.json'), 'utf8')
+      return JSON.parse(data)
+    } catch (error) {
+      console.error('[WorkoutPulse] Error loading access tokens:', error)
       return null
     }
   }

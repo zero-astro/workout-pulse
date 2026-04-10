@@ -129,7 +129,7 @@ Currently using Node-USB for device detection. May need vendor-specific PID/VID 
 ### Security & Best Practices (High Priority)
 - [x] ✅ **Securely store OAuth credentials** - Completed: AES-256-CBC encryption with PBKDF2 key derivation, system-specific master keys, secure file permissions (0o600), CredentialsManager class
 - [x] ✅ **Implement input validation and sanitization** - Completed: SecurityUtils module with email/URL/UUID validation, SQL injection detection, XSS pattern matching, workout data validation
-- [ ] Add rate limiting for API requests - In progress: Rate limiter utility created, needs integration into API client
+- [x] ✅ **Add rate limiting for API requests** - Completed: Token bucket algorithm integrated into FittrackeeApiClient (100 req/min), prevents abuse and ensures fair usage
 - [ ] Set up logging with proper error tracking
 - [ ] Review and fix any security vulnerabilities
 
