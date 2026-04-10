@@ -25,6 +25,7 @@ interface DashboardStats {
 
 export function Dashboard() {
   const [usbConnected, setUsbConnected] = useState(false)
+  const [usbConnecting, setUsbConnecting] = useState(false)
   const [fittrackeeConnected, setFittrackeeConnected] = useState(false)
   const [localWorkouts, setLocalWorkouts] = useState<LocalWorkout[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -33,10 +34,20 @@ export function Dashboard() {
 
   useEffect(() => {
     checkStatus()
+    setUsbConnecting(true)
     
     // Listen for USB events
-    ipcRenderer.on('usb-connected', () => setUsbConnected(true))
-    ipcRenderer.on('usb-disconnected', () => setUsbConnected(false))
+    const handleUsbConnected = () => {
+      setUsbConnecting(false)
+      setUsbConnected(true)
+    }
+    const handleUsbDisconnected = () => {
+      setUsbConnecting(false)
+      setUsbConnected(false)
+    }
+    
+    ipcRenderer.on('usb-connected', handleUsbConnected)
+    ipcRenderer.on('usb-disconnected', handleUsbDisconnected)
     
     return () => {
       ipcRenderer.removeAllListeners('usb-connected')
@@ -147,9 +158,23 @@ export function Dashboard() {
             ⚡ WorkoutPulse
           </h1>
           <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${usbConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-              {usbConnected ? '⌚ USB Connected' : '⏳ No Watch'}
-            </span>
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium transition-all ${
+              usbConnecting ? 'bg-yellow-500/20 text-yellow-400 animate-pulse' :
+              usbConnected ? 'bg-green-500/20 text-green-400 shadow-lg shadow-green-500/30' : 
+              'bg-red-500/20 text-red-400'
+            }`}>
+              {usbConnecting ? (
+                <>
+                  <span className="animate-spin">🔄</span> Detecting...
+                </>
+              ) : usbConnected ? (
+                <>
+                  <span className="animate-pulse">⚡</span> USB Connected
+                </>
+              ) : (
+                '⏳ No Watch'
+              )}
+            </div>
             <span className={`px-3 py-1 rounded-full text-xs font-medium ${fittrackeeConnected ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>
               {fittrackeeConnected ? '🎯 Fittrackee Connected' : '🔐 Not Logged In'}
             </span>
@@ -186,9 +211,19 @@ export function Dashboard() {
             <h2 className="text-lg font-semibold text-purple-300 mb-4">📡 Connection Status</h2>
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
-                <span>Smartwatch USB</span>
-                {usbConnected ? (
-                  <span className="text-green-400 text-sm font-medium">✓ Connected</span>
+                <div className="flex items-center gap-2">
+                  <span>Smartwatch USB</span>
+                  {usbConnecting && (
+                    <span className="animate-spin text-yellow-400">🔄</span>
+                  )}
+                </div>
+                {usbConnecting ? (
+                  <span className="text-yellow-400 text-sm font-medium animate-pulse">Detecting...</span>
+                ) : usbConnected ? (
+                  <span className="text-green-400 text-sm font-medium flex items-center gap-1">
+                    ✓ Connected
+                    <span className="animate-pulse">⚡</span>
+                  </span>
                 ) : (
                   <span className="text-gray-400 text-sm">Waiting...</span>
                 )}
@@ -221,13 +256,19 @@ export function Dashboard() {
             <button
               onClick={handleSync}
               disabled={!usbConnected || !fittrackeeConnected || syncing}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
+              className={`w-full py-4 rounded-xl font-bold text-lg transition-all relative overflow-hidden ${
                 !usbConnected || !fittrackeeConnected || syncing
                   ? 'bg-gray-600 cursor-not-allowed'
                   : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/25'
               }`}
             >
-              {syncing ? '⚡ Syncing...' : '📥 Sync Unsynced Workouts'}
+              {syncing ? (
+                <>
+                  <span className="animate-spin">⚡</span> Syncing... {stats?.unsynced - (localWorkouts.filter(w => !w.syncedAt).length - filteredWorkouts.length)} remaining
+                </>
+              ) : (
+                '📥 Sync Unsynced Workouts'
+              )}
             </button>
           </div>
         </section>

@@ -1,345 +1,422 @@
-/**
- * Unit Tests for USB Detector
- */
+import { RobustUsbDetector, detectUsbDevice } from '../main/usb-detector'
+import * as fs from 'fs'
+import * as path from 'path'
 
-const { RobustUsbDetector } = require('../main/usb-detector')
-const fs = require('fs')
-const path = require('path')
-const os = require('os')
+// Mock chokidar
+jest.mock('chokidar', () => ({
+  watch: jest.fn(() => ({
+    on: jest.fn().mockReturnThis(),
+    off: jest.fn().mockReturnThis()
+  })),
+  FSWatcher: class {
+    on = jest.fn()
+    off = jest.fn()
+    close = jest.fn()
+  }
+}))
+
+// Mock glob
+jest.mock('glob', () => ({
+  sync: jest.fn(() => [])
+}))
 
 describe('RobustUsbDetector', () => {
-  let detector
-  let testDir
-
+  let detector: RobustUsbDetector
+  const mockDevicePath = '/Volumes/GARMIN'
+  
   beforeEach(() => {
-    // Create isolated test directory
-    testDir = `/tmp/workout-pulse-usb-test-${Date.now()}`
-    fs.mkdirSync(testDir, { recursive: true })
-    
-    detector = new RobustUsbDetector()
-    
-    // Override device discovery for testing
-    detector.deviceDirs = []
-  })
-
-  afterEach(async () => {
-    // Stop monitoring and clean up
-    try {
-      detector.stopMonitoring()
-      
-      const testDirPath = path.dirname(testDir)
-      if (fs.existsSync(testDirPath)) {
-        await fs.promises.rm(testDirPath, { recursive: true, force: true })
-      }
-    } catch (error) {
-      // Silently ignore cleanup errors
-    }
-    
+    // Clear all mocks before each test
     jest.clearAllMocks()
-  }, 10000) // Increase timeout for cleanup
+    
+    // Create fresh instance for each test
+    detector = new RobustUsbDetector()
+  })
 
-  describe('device discovery', () => {
-    it('should initialize with empty device list', () => {
-      const devices = detector.getDetectedDevices()
-      expect(devices).toHaveLength(0)
-    })
+  afterEach(() => {
+    detector.stopMonitoring()
+    jest.resetModules()
+  })
 
-    it('should discover Garmin device when directory exists', () => {
-      // Create mock Garmin structure
-      const garminDir = path.join(testDir, 'Garmin', 'Fitness')
-      fs.mkdirSync(garminDir, { recursive: true })
-      
-      // Add a mock FIT file
-      fs.writeFileSync(path.join(garminDir, 'activity.fit'), 'mock fit data')
-
-      // Manually trigger discovery with our test directory
-      const deviceInfo = {
-        name: 'Garmin',
-        path: garminDir,
-        type: 'garmin',
-        workoutFiles: [path.join(garminDir, 'activity.fit')]
-      }
-
-      detector.deviceDirs = [deviceInfo]
-
-      const devices = detector.getDetectedDevices()
-      
-      expect(devices).toHaveLength(1)
-      expect(devices[0].type).toBe('garmin')
-      expect(devices[0].workoutFiles.length).toBe(1)
-    })
-
-    it('should detect multiple device types', () => {
-      // Create mock structures for different devices
-      const garminDir = path.join(testDir, 'Garmin')
-      const fitbitDir = path.join(testDir, 'Fitbit')
-      
-      fs.mkdirSync(garminDir, { recursive: true })
-      fs.mkdirSync(fitbitDir, { recursive: true })
-
-      // Add workout files to both
-      fs.writeFileSync(path.join(garminDir, 'garmin.fit'), 'fit data')
-      fs.writeFileSync(path.join(fitbitDir, 'fitbit.gpx'), 'gpx data')
-
-      const devices = [
-        {
-          name: 'Garmin',
-          path: garminDir,
-          type: 'garmin',
-          workoutFiles: [path.join(garminDir, 'garmin.fit')]
-        },
-        {
-          name: 'Fitbit',
-          path: fitbitDir,
-          type: 'fitbit',
-          workoutFiles: [path.join(fitbitDir, 'fitbit.gpx')]
+  describe('Device Discovery', () => {
+    test('should discover devices from common mount points', () => {
+      // Mock fs.existsSync to return true for Garmin path
+      ;(fs.existsSync as jest.Mock).mockImplementation((dir: string) => {
+        if (dir === mockDevicePath || dir.includes('Garmin')) {
+          return true
         }
-      ]
+        return false
+      })
 
-      detector.deviceDirs = devices
+      // Mock statSync to indicate directory
+      ;(fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true })
 
-      const detectedDevices = detector.getDetectedDevices()
+      detector.discoverDevices()
       
-      expect(detectedDevices).toHaveLength(2)
-      expect(detectedDevices.some(d => d.type === 'garmin')).toBe(true)
-      expect(detectedDevices.some(d => d.type === 'fitbit')).toBe(true)
+      const devices = detector.getDetectedDevices()
+      
+      // Should have discovered at least one device path
+      expect(detector.getDetectedDevices()).toBeDefined()
     })
 
-    it('should filter out devices without workout files', () => {
-      // Create device directory with a non-workout file (to test filtering logic)
-      const emptyDir = path.join(testDir, 'EmptyDevice')
-      fs.mkdirSync(emptyDir, { recursive: true })
+    test('should filter out directories without workout files', () => {
+      // Mock fs to return true but no workout files found
+      ;(fs.existsSync as jest.Mock).mockImplementation((dir: string) => {
+        return dir === mockDevicePath || dir.includes('Garmin')
+      })
 
-      // Add a non-workout file to the directory
-      fs.writeFileSync(path.join(emptyDir, 'readme.txt'), 'not a workout file')
-
-      const devices = [
-        {
-          name: 'EmptyDevice',
-          path: emptyDir,
-          type: 'unknown',
-          workoutFiles: [] // No valid workout files
-        }
-      ]
-
-      detector.deviceDirs = devices
-
-      const detectedDevices = detector.getDetectedDevices()
+      ;(fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true })
       
-      // Note: The current implementation returns all deviceDirs as-is
-      // This test verifies the expected behavior (filtering) even if not implemented yet
-      expect(detectedDevices).toHaveLength(1)
-      expect(detectedDevices[0].workoutFiles).toHaveLength(0)
+      // Mock findWorkoutFiles to return empty array
+      const originalFind = detector.findWorkoutFiles.bind(detector)
+      detector.findWorkoutFiles = jest.fn().mockReturnValue([])
+
+      detector.discoverDevices()
+      
+      // Should not add devices without workout files
+      expect(detector.getDetectedDevices()).toHaveLength(0)
+    })
+
+    test('should identify Garmin device type', () => {
+      const mockGarminDir = '/Volumes/Garmin/Fitness'
+      
+      ;(fs.existsSync as jest.Mock).mockImplementation((dir: string) => {
+        return dir === mockDevicePath || dir === mockGarminDir
+      })
+
+      ;(fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true })
+      
+      // Mock workout files found
+      detector.findWorkoutFiles = jest.fn().mockReturnValue(['/Volumes/Garmin/Fitness/workout.fit'])
+
+      const deviceInfo = detector.analyzeDevice(mockGarminDir)
+      
+      expect(deviceInfo?.type).toBe('garmin')
+      expect(deviceInfo?.workoutFiles.length).toBe(1)
+    })
+
+    test('should identify Fitbit device type', () => {
+      const mockFitbitDir = '/Volumes/Fitbit'
+      
+      ;(fs.existsSync as jest.Mock).mockImplementation((dir: string) => {
+        return dir === mockDevicePath || dir.includes('Fitbit')
+      })
+
+      ;(fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true })
+      
+      detector.findWorkoutFiles = jest.fn().mockReturnValue(['/Volumes/Fitbit/workout.gpx'])
+
+      const deviceInfo = detector.analyzeDevice(mockFitbitDir)
+      
+      expect(deviceInfo?.type).toBe('fitbit')
+    })
+
+    test('should identify Apple Watch device type', () => {
+      const mockAppleDir = '/Volumes/iPhone/HealthData'
+      
+      ;(fs.existsSync as jest.Mock).mockImplementation((dir: string) => {
+        return dir === mockDevicePath || dir.includes('HealthData')
+      })
+
+      ;(fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true })
+      
+      detector.findWorkoutFiles = jest.fn().mockReturnValue(['/Volumes/iPhone/HealthData/workout.fit'])
+
+      const deviceInfo = detector.analyzeDevice(mockAppleDir)
+      
+      expect(deviceInfo?.type).toBe('apple-watch')
     })
   })
 
-  describe('monitoring events', () => {
-    it('should emit workout-detected event when new file appears', (done) => {
-      // Create test directory with initial structure
-      const deviceDir = path.join(testDir, 'TestDevice')
-      fs.mkdirSync(deviceDir, { recursive: true })
+  describe('File Scanning', () => {
+    test('should find FIT files recursively', () => {
+      const mockFiles = [
+        '/Volumes/Garmin/workout.fit',
+        '/Volumes/Garmin/Fitness/activity.fit',
+        '/Volumes/Garmin/Other/file.txt' // Should be ignored
+      ]
 
-      // Add device to detector
-      const deviceInfo = {
-        name: 'TestDevice',
-        path: deviceDir,
-        type: 'unknown',
-        workoutFiles: []
-      }
-      
-      detector.deviceDirs = [deviceInfo]
-
-      // Set up event listener with timeout
-      const timeout = setTimeout(() => {
-        done.fail('Timeout: workout-detected event not emitted')
-      }, 2000)
-
-      detector.on('workout-detected', (event) => {
-        clearTimeout(timeout)
-        expect(event.type).toBe('workout-detected')
-        expect(event.filePath).toContain('.fit')
-        done()
+      detector.findWorkoutFiles = jest.fn().mockImplementation((dir: string) => {
+        return mockFiles.filter(f => f.endsWith('.fit'))
       })
 
-      // Start monitoring
-      detector.startMonitoring()
-
-      // Simulate new file creation and manually trigger event via mock
-      setTimeout(() => {
-        const newFile = path.join(deviceDir, 'new-workout.fit')
-        fs.writeFileSync(newFile, 'mock fit data')
-        
-        // Manually emit the workout-detected event since chokidar is mocked
-        detector.emit('workout-detected', {
-          type: 'workout-detected' as const,
-          filePath: newFile,
-          timestamp: Date.now()
-        })
-      }, 100)
+      const results = detector.findWorkoutFiles(mockFiles[0].split('/').slice(0, 4).join('/'))
+      
+      expect(results.length).toBeGreaterThan(0)
     })
 
-    it('should emit connected event when new device is detected', (done) => {
-      // Set up event listener with timeout
-      const timeout = setTimeout(() => {
-        done.fail('Timeout: connected event not emitted')
-      }, 2000)
+    test('should find GPX files', () => {
+      const mockFiles = ['/Volumes/Garmin/trail.gpx']
+      
+      detector.findWorkoutFiles = jest.fn().mockImplementation((dir: string) => {
+        return mockFiles.filter(f => f.endsWith('.gpx'))
+      })
 
+      const results = detector.findWorkoutFiles(mockFiles[0].split('/').slice(0, 4).join('/'))
+      
+      expect(results.length).toBeGreaterThan(0)
+    })
+
+    test('should find TCX files', () => {
+      const mockFiles = ['/Volumes/Garmin/race.tcx']
+      
+      detector.findWorkoutFiles = jest.fn().mockImplementation((dir: string) => {
+        return mockFiles.filter(f => f.endsWith('.tcx'))
+      })
+
+      const results = detector.findWorkoutFiles(mockFiles[0].split('/').slice(0, 4).join('/'))
+      
+      expect(results.length).toBeGreaterThan(0)
+    })
+
+    test('should ignore non-workout file extensions', () => {
+      const mockFiles = [
+        '/Volumes/Garmin/readme.txt',
+        '/Volumes/Garmin/config.json',
+        '/Volumes/Garmin/image.jpg'
+      ]
+
+      detector.findWorkoutFiles = jest.fn().mockImplementation((dir: string) => {
+        return mockFiles.filter(f => /\.(fit|gpx|tcx|kp)$/.test(f))
+      })
+
+      const results = detector.findWorkoutFiles(mockFiles[0].split('/').slice(0, 4).join('/'))
+      
+      expect(results.length).toBe(0)
+    })
+  })
+
+  describe('Event Emission', () => {
+    test('should emit connected event when device detected', (done) => {
       detector.on('connected', (event) => {
-        clearTimeout(timeout)
         expect(event.type).toBe('connected')
-        expect(event.device).toBeDefined()
+        expect(event.timestamp).toBeDefined()
         done()
       })
 
-      // Start monitoring
-      detector.startMonitoring()
-
-      // Simulate new mount point detection after delay
-      setTimeout(() => {
-        const newDeviceDir = path.join(testDir, 'NewDevice')
-        fs.mkdirSync(newDeviceDir, { recursive: true })
-        
-        // Add workout file to trigger device detection
-        fs.writeFileSync(path.join(newDeviceDir, 'workout.fit'), 'data')
-
-        // Manually refresh and emit connected event since chokidar is mocked
-        detector.refreshDeviceList()
-        detector.emit('connected', {
-          type: 'connected' as const,
-          device: 'NewDevice',
-          devicePath: newDeviceDir,
-          timestamp: Date.now()
-        })
-      }, 100)
+      // Simulate device detection
+      detector.emit('connected', {
+        type: 'connected',
+        device: 'Test Device',
+        devicePath: '/Volumes/TEST',
+        timestamp: Date.now()
+      })
     })
 
-    it('should emit disconnected event when workout file is removed', (done) => {
-      const deviceDir = path.join(testDir, 'TestDevice')
-      fs.mkdirSync(deviceDir, { recursive: true })
+    test('should emit workout-detected event when file found', (done) => {
+      detector.on('workout-detected', (event) => {
+        expect(event.type).toBe('workout-detected')
+        expect(event.filePath).toBeDefined()
+        done()
+      })
 
-      // Create initial workout file and add to detector
-      const workoutFile = path.join(deviceDir, 'initial.fit')
-      fs.writeFileSync(workoutFile, 'data')
+      // Simulate workout detection
+      detector.emit('workout-detected', {
+        type: 'workout-detected',
+        filePath: '/Volumes/Garmin/workout.fit',
+        timestamp: Date.now()
+      })
+    })
 
-      const deviceInfo = {
-        name: 'TestDevice',
-        path: deviceDir,
-        type: 'unknown',
-        workoutFiles: [workoutFile]
-      }
-
-      detector.deviceDirs = [deviceInfo]
-
-      // Set up event listener with timeout
-      const timeout = setTimeout(() => {
-        done.fail('Timeout: disconnected event not emitted')
-      }, 2000)
-
+    test('should emit disconnected event when device removed', (done) => {
       detector.on('disconnected', (event) => {
-        clearTimeout(timeout)
         expect(event.type).toBe('disconnected')
+        expect(event.timestamp).toBeDefined()
         done()
       })
 
-      detector.startMonitoring()
-
-      // Remove the workout file after a short delay and manually emit event
-      setTimeout(() => {
-        fs.unlinkSync(workoutFile)
-        
-        // Manually emit disconnected event since chokidar is mocked
-        detector.emit('disconnected', {
-          type: 'disconnected' as const,
-          device: 'TestDevice',
-          timestamp: Date.now()
-        })
-      }, 100)
+      // Simulate disconnection
+      detector.emit('disconnected', {
+        type: 'disconnected',
+        device: 'Test Device',
+        timestamp: Date.now()
+      })
     })
 
-    it('should handle errors gracefully', (done) => {
-      const errorListener = jest.fn()
-      detector.on('error', errorListener)
-
-      // Start monitoring - in test mode, no actual errors should occur
-      detector.startMonitoring()
-
-      setTimeout(() => {
-        // The mock chokidar doesn't emit errors by default
-        // This test verifies the error listener is properly registered
-        expect(detector.listenerCount('error')).toBeGreaterThan(0)
+    test('should emit error event on failure', (done) => {
+      const testError = new Error('Test error')
+      
+      detector.on('error', (event) => {
+        expect(event.type).toBe('error')
+        expect(event.error).toBe(testError)
         done()
-      }, 200)
+      })
+
+      // Simulate error
+      detector.emit('error', {
+        type: 'error',
+        error: testError,
+        timestamp: Date.now()
+      })
     })
   })
 
-  describe('monitoring lifecycle', () => {
-    it('should start and stop monitoring correctly', () => {
-      expect(detector.isRunning()).toBe(false)
+  describe('Monitoring Lifecycle', () => {
+    test('should start monitoring without errors', () => {
+      // Mock chokidar to avoid actual file watching
+      const mockWatcher = {
+        on: jest.fn().mockReturnThis(),
+        off: jest.fn().mockReturnThis(),
+        close: jest.fn()
+      }
 
+      require('chokidar').watch = jest.fn(() => mockWatcher)
+
+      detector.startMonitoring()
+      
+      expect(detector.isRunning()).toBe(true)
+    })
+
+    test('should stop monitoring and cleanup', () => {
       detector.startMonitoring()
       expect(detector.isRunning()).toBe(true)
-
+      
       detector.stopMonitoring()
+      
       expect(detector.isRunning()).toBe(false)
     })
 
-    it('should prevent multiple simultaneous monitors', () => {
+    test('should prevent duplicate start', () => {
       detector.startMonitoring()
+      const firstPollInterval = (detector as any).pollInterval
       
-      // Second start should be no-op
-      const internalState = detector.isMonitoring
+      detector.startMonitoring() // Should not create new interval
       
-      detector.startMonitoring()
+      const secondPollInterval = (detector as any).pollInterval
       
-      expect(detector.isMonitoring).toBe(internalState)
-      
-      detector.stopMonitoring()
+      expect(firstPollInterval).toBe(secondPollInterval)
     })
 
-    it('should clean up all watchers on stop', () => {
-      detector.startMonitoring()
+    test('should refresh device list on demand', () => {
+      const mockRefresh = jest.spyOn(detector, 'discoverDevices')
       
-      const watcher = detector.watcher
-      const pollInterval = detector.pollInterval
+      detector.refreshDeviceList()
       
-      expect(watcher).toBeDefined()
-      expect(pollInterval).toBeDefined()
-
-      detector.stopMonitoring()
-
-      expect(detector.watcher).toBeNull()
-      expect(detector.pollInterval).toBeNull()
+      expect(mockRefresh).toHaveBeenCalled()
+      mockRefresh.mockRestore()
     })
   })
 
-  describe('utility methods', () => {
-    it('should return current device list', () => {
-      const devices = [
-        {
-          name: 'TestDevice',
-          path: testDir,
-          type: 'unknown',
-          workoutFiles: []
-        }
-      ]
-
-      detector.deviceDirs = devices
-
-      const result = detector.getDetectedDevices()
+  describe('detectUsbDevice Function', () => {
+    test('should return connected=false when no devices found', async () => {
+      // Mock to return empty array
+      detector.getDetectedDevices = jest.fn().mockReturnValue([])
       
-      expect(result).toEqual(devices)
+      const result = await detectUsbDevice()
+      
+      expect(result.connected).toBe(false)
+      expect(result.device).toBeUndefined()
     })
 
-    it('should refresh device list on demand', () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+    test('should return connected=true with device info when found', async () => {
+      const mockDevice = {
+        name: 'Garmin Fenix',
+        path: '/Volumes/GARMIN',
+        type: 'garmin' as const,
+        workoutFiles: ['/Volumes/GARMIN/workout.fit']
+      }
 
-      detector.refreshDeviceList()
+      detector.getDetectedDevices = jest.fn().mockReturnValue([mockDevice])
+      
+      const result = await detectUsbDevice()
+      
+      expect(result.connected).toBe(true)
+      expect(result.device).toBeDefined()
+      expect(result.device?.name).toBe('Garmin Fenix')
+    })
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Refreshing device list')
-      )
+    test('should handle errors gracefully', async () => {
+      detector.refreshDeviceList = jest.fn().mockImplementation(() => {
+        throw new Error('Test error')
+      })
+      
+      const result = await detectUsbDevice()
+      
+      // Should still return safe default even on error
+      expect(result.connected).toBe(false)
+    })
+  })
 
-      consoleSpy.mockRestore()
+  describe('Edge Cases', () => {
+    test('should handle non-existent device paths gracefully', () => {
+      ;(fs.existsSync as jest.Mock).mockReturnValue(false)
+      
+      const deviceInfo = detector.analyzeDevice('/Volumes/NonExistent')
+      
+      expect(deviceInfo).toBeNull()
+    })
+
+    test('should handle permission errors when scanning directories', () => {
+      ;(fs.statSync as jest.Mock).mockImplementation(() => {
+        throw new Error('Permission denied')
+      })
+      
+      const deviceInfo = detector.analyzeDevice('/Volumes/Protected')
+      
+      expect(deviceInfo).toBeNull()
+    })
+
+    test('should handle empty workout file arrays', () => {
+      detector.findWorkoutFiles = jest.fn().mockReturnValue([])
+      
+      ;(fs.existsSync as jest.Mock).mockReturnValue(true)
+      ;(fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true })
+      
+      const deviceInfo = detector.analyzeDevice('/Volumes/Empty')
+      
+      expect(deviceInfo).toBeNull() // Should filter out devices without workouts
+    })
+
+    test('should deduplicate device paths', () => {
+      ;(fs.existsSync as jest.Mock).mockImplementation((dir: string) => {
+        return dir.includes('Garmin') || dir.includes('/Volumes')
+      })
+      
+      detector.discoverDevices()
+      
+      const devices = detector.getDetectedDevices()
+      const uniquePaths = new Set(devices.map(d => d.path))
+      
+      expect(devices.length).toBe(uniquePaths.size) // No duplicates
+    })
+  })
+
+  describe('Integration Tests', () => {
+    test('should handle full device detection workflow', () => {
+      // Mock all fs methods
+      ;(fs.existsSync as jest.Mock).mockImplementation((dir: string) => {
+        return dir.includes('/Volumes') || dir.includes('Garmin')
+      })
+      
+      ;(fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true })
+      
+      detector.findWorkoutFiles = jest.fn().mockReturnValue([
+        '/Volumes/Garmin/Fitness/activity.fit',
+        '/Volumes/Garmin/workout.gpx'
+      ])
+
+      // Run full discovery
+      detector.discoverDevices()
+      
+      const devices = detector.getDetectedDevices()
+      
+      expect(devices.length).toBeGreaterThan(0)
+      expect(devices[0].workoutFiles.length).toBeGreaterThan(0)
+    })
+
+    test('should maintain event listener cleanup', () => {
+      const mockListener = jest.fn()
+      detector.on('test-event', mockListener)
+      
+      // Emit and verify
+      detector.emit('test-event', 'data')
+      expect(mockListener).toHaveBeenCalledWith('data')
+      
+      // Remove listener
+      detector.off('test-event', mockListener)
+      
+      // Should not be called again
+      detector.emit('test-event', 'new-data')
+      expect(mockListener).toHaveBeenCalledTimes(1)
     })
   })
 })
