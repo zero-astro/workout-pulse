@@ -106,7 +106,7 @@ Currently using Node-USB for device detection. May need vendor-specific PID/VID 
 ### User Interface (Medium Priority)
 - [x] ✅ **Design main dashboard with recent workouts overview** - Completed: Modern dark-themed UI with statistics cards, connection status, activity distribution, and filtered workout list (All/Unsynced tabs)
 - [x] ✅ **Build settings page for Fittrackee credentials configuration** - Completed: OAuth modal integrated in dashboard
-- [ ] Add visual feedback for USB connection status
+- [x] ✅ **Add visual feedback for USB connection status** - Completed: Animated pulsing indicators, real-time detection state with spinning icons, enhanced header badge with color transitions
 - [ ] Implement real-time sync progress indicator
 - [ ] Create workout details modal/view
 - [ ] Add dark/light theme toggle

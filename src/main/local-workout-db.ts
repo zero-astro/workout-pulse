@@ -1,4 +1,4 @@
-import * as Database from 'better-sqlite3'
+import Database from 'better-sqlite3'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
