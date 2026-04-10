@@ -16,6 +16,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.48",
@@ -27,6 +28,7 @@
     "electron-builder": "^24.9.1",
     "electron-vite": "^2.3.0",
     "jest": "^30.3.0",
+    "memory-fs": "^0.5.0",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.4.9",
@@ -36,6 +38,7 @@
   "dependencies": {
     "@electron/remote": "^2.1.0",
     "axios": "^1.6.5",
+    "better-sqlite3": "^12.8.0",
     "fit-file-parser": "^2.3.3",
     "glob": "^10.3.10",
     "react": "^18.2.0",

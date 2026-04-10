@@ -4,6 +4,7 @@ import * as http from 'http'
 import * as path from 'path'
 import { FittrackeeOAuthClient, OAuthCredentials } from './oauth-client'
 import { WorkoutData } from './workout-parser'
+import { apiRetryHandler, circuitBreaker } from './api-retry-handler'
 
 export interface FittrackeeWorkout {
   uuid: string
@@ -64,46 +65,76 @@ export class FittrackeeApiClient extends EventEmitter {
   }
 
   /**
-   * Get user profile information
+   * Get user profile information with retry logic
    */
   async getUserProfile(): Promise<any> {
-    try {
-      const data = await this.makeRequest('GET', '/api/user/me')
-      return JSON.parse(data)
-    } catch (error) {
-      console.error('[FittrackeeAPI] Error fetching user profile:', error)
-      throw new Error(`Failed to fetch user profile: ${error.message}`)
+    const result = await apiRetryHandler.execute(
+      () => this.makeRequest('GET', '/api/user/me').then(JSON.parse),
+      {
+        onRetry: (attempt, error, delayMs) => {
+          console.log(`[FittrackeeAPI] getUserProfile retry ${attempt}/${this.options.maxAttempts}, waiting ${delayMs}ms`)
+        },
+        onSuccess: () => console.log('[FittrackeeAPI] User profile fetched successfully'),
+        onError: (error, attempts) => {
+          console.error(`[FittrackeeAPI] getUserProfile failed after ${attempts} attempts:`, error.message)
+        }
+      }
+    )
+
+    if (!result.success) {
+      throw new Error(`Failed to fetch user profile after ${result.attempts} attempts: ${result.lastError?.message}`)
     }
+
+    return result.result
   }
 
   /**
-   * Get list of available activity types
+   * Get list of available activity types with retry logic
    */
   async getActivityTypes(): Promise<FittrackeeActivityType[]> {
-    try {
-      const data = await this.makeRequest('GET', '/api/activity-type')
-      return JSON.parse(data)
-    } catch (error) {
-      console.error('[FittrackeeAPI] Error fetching activity types:', error)
-      throw new Error(`Failed to fetch activity types: ${error.message}`)
+    const result = await apiRetryHandler.execute(
+      () => this.makeRequest('GET', '/api/activity-type').then(JSON.parse),
+      {
+        onRetry: (attempt, error, delayMs) => {
+          console.log(`[FittrackeeAPI] getActivityTypes retry ${attempt}/${this.options.maxAttempts}, waiting ${delayMs}ms`)
+        },
+        onSuccess: () => console.log('[FittrackeeAPI] Activity types fetched successfully'),
+        onError: (error, attempts) => {
+          console.error(`[FittrackeeAPI] getActivityTypes failed after ${attempts} attempts:`, error.message)
+        }
+      }
+    )
+
+    if (!result.success) {
+      throw new Error(`Failed to fetch activity types after ${result.attempts} attempts: ${result.lastError?.message}`)
     }
+
+    return result.result
   }
 
   /**
-   * Get recent workouts from Fittrackee (for sync checking)
+   * Get recent workouts from Fittrackee with retry logic
    */
   async getRecentWorkouts(limit: number = 10): Promise<FittrackeeWorkout[]> {
-    try {
-      const data = await this.makeRequest(
-        'GET', 
-        `/api/workout?limit=${limit}&order_by=-start_datetime`
-      )
-      const result = JSON.parse(data)
-      return result.results || []
-    } catch (error) {
-      console.error('[FittrackeeAPI] Error fetching recent workouts:', error)
-      throw new Error(`Failed to fetch recent workouts: ${error.message}`)
+    const result = await apiRetryHandler.execute(
+      () => this.makeRequest('GET', `/api/workout?limit=${limit}&order_by=-start_datetime`).then(JSON.parse),
+      {
+        onRetry: (attempt, error, delayMs) => {
+          console.log(`[FittrackeeAPI] getRecentWorkouts retry ${attempt}/${this.options.maxAttempts}, waiting ${delayMs}ms`)
+        },
+        onSuccess: () => console.log('[FittrackeeAPI] Recent workouts fetched successfully'),
+        onError: (error, attempts) => {
+          console.error(`[FittrackeeAPI] getRecentWorkouts failed after ${attempts} attempts:`, error.message)
+        }
+      }
+    )
+
+    if (!result.success) {
+      throw new Error(`Failed to fetch recent workouts after ${result.attempts} attempts: ${result.lastError?.message}`)
     }
+
+    const parsed = result.result
+    return parsed.results || []
   }
 
   /**
@@ -120,45 +151,58 @@ export class FittrackeeApiClient extends EventEmitter {
   }
 
   /**
-   * Upload a new workout to Fittrackee
+   * Upload a new workout to Fittrackee with retry logic and circuit breaker
    */
   async uploadWorkout(workout: WorkoutData): Promise<FittrackeeWorkout> {
-    try {
-      // Map local WorkoutData to Fittrackee format
-      const fittrackeeWorkout: FittrackeeWorkout = {
-        uuid: workout.id,
-        activity_type_id: this.activityTypeMap[workout.type] || 99,
-        is_outdoors: true, // Default to outdoor for now
-        name: path.basename(workout.filePath),
-        description: `Synced from ${workout.deviceName} via WorkoutPulse`,
-        distance: workout.distance || 0,
-        moving_time: workout.duration,
-        elapsed_time: workout.duration,
-        elevation_gain: workout.elevationGain || 0,
-        total_photo_count: 0,
-        start_datetime: workout.startTime.toISOString(),
-        end_datetime: workout.endTime.toISOString(),
-        average_heart_rate: workout.avgHeartRate,
-        maximum_heart_rate: workout.maxHeartRate,
-        calories: workout.calories || 0
-      }
-
-      const data = await this.makeRequest('POST', '/api/workout', fittrackeeWorkout)
-      const result = JSON.parse(data)
-      
-      console.log('[FittrackeeAPI] Workout uploaded successfully:', result.uuid)
-      
-      this.emit('workout-uploaded', {
-        workout: result,
-        timestamp: Date.now()
-      })
-
-      return result
-      
-    } catch (error) {
-      console.error('[FittrackeeAPI] Error uploading workout:', error)
-      throw new Error(`Failed to upload workout: ${error.message}`)
+    // Map local WorkoutData to Fittrackee format
+    const fittrackeeWorkout: FittrackeeWorkout = {
+      uuid: workout.id,
+      activity_type_id: this.activityTypeMap[workout.type] || 99,
+      is_outdoors: true, // Default to outdoor for now
+      name: path.basename(workout.filePath),
+      description: `Synced from ${workout.deviceName} via WorkoutPulse`,
+      distance: workout.distance || 0,
+      moving_time: workout.duration,
+      elapsed_time: workout.duration,
+      elevation_gain: workout.elevationGain || 0,
+      total_photo_count: 0,
+      start_datetime: workout.startTime.toISOString(),
+      end_datetime: workout.endTime.toISOString(),
+      average_heart_rate: workout.avgHeartRate,
+      maximum_heart_rate: workout.maxHeartRate,
+      calories: workout.calories || 0
     }
+
+    const result = await circuitBreaker.execute(
+      async () => {
+        const data = await this.makeRequest('POST', '/api/workout', fittrackeeWorkout)
+        return JSON.parse(data)
+      },
+      {
+        onRetry: (attempt, error, delayMs) => {
+          console.log(`[FittrackeeAPI] uploadWorkout retry ${attempt}/${this.options.maxAttempts}, waiting ${delayMs}ms`)
+        },
+        onSuccess: () => console.log('[FittrackeeAPI] Workout uploaded successfully'),
+        onError: (error, attempts) => {
+          console.error(`[FittrackeeAPI] uploadWorkout failed after ${attempts} attempts:`, error.message)
+        }
+      }
+    )
+
+    if (!result.success) {
+      throw new Error(`Failed to upload workout after ${result.attempts} attempts: ${result.lastError?.message}`)
+    }
+
+    const uploadedWorkout = result.result
+    
+    console.log('[FittrackeeAPI] Workout uploaded successfully:', uploadedWorkout.uuid)
+    
+    this.emit('workout-uploaded', {
+      workout: uploadedWorkout,
+      timestamp: Date.now()
+    })
+
+    return uploadedWorkout
   }
 
   /**
@@ -231,15 +275,24 @@ export class FittrackeeApiClient extends EventEmitter {
   }
 
   /**
-   * Delete a workout by UUID
+   * Delete a workout by UUID with retry logic
    */
   async deleteWorkout(uuid: string): Promise<void> {
-    try {
-      await this.makeRequest('DELETE', `/api/workout/${uuid}`)
-      console.log('[FittrackeeAPI] Workout deleted:', uuid)
-    } catch (error) {
-      console.error('[FittrackeeAPI] Error deleting workout:', error)
-      throw new Error(`Failed to delete workout: ${error.message}`)
+    const result = await apiRetryHandler.execute(
+      () => this.makeRequest('DELETE', `/api/workout/${uuid}`),
+      {
+        onRetry: (attempt, error, delayMs) => {
+          console.log(`[FittrackeeAPI] deleteWorkout retry ${attempt}/${this.options.maxAttempts}, waiting ${delayMs}ms`)
+        },
+        onSuccess: () => console.log('[FittrackeeAPI] Workout deleted successfully'),
+        onError: (error, attempts) => {
+          console.error(`[FittrackeeAPI] deleteWorkout failed after ${attempts} attempts:`, error.message)
+        }
+      }
+    )
+
+    if (!result.success) {
+      throw new Error(`Failed to delete workout after ${result.attempts} attempts: ${result.lastError?.message}`)
     }
   }
 
