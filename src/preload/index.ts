@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -20,7 +20,17 @@ contextBridge.exposeInMainWorld('electron', {
   getWorkoutStatistics: () => 
     ipcRenderer.invoke('get-workout-statistics'),
   openAuthModal: () => 
-    ipcRenderer.invoke('open-auth-modal')
+    ipcRenderer.invoke('open-auth-modal'),
+  
+  // Event system
+  on: (channel: string, callback: (event: IpcRendererEvent, ...args: any[]) => void) => {
+    const subscription = (event: IpcRendererEvent, ...args: any[]) => callback(event, ...args)
+    ipcRenderer.on(channel, subscription)
+    return () => ipcRenderer.removeListener(channel, subscription)
+  },
+  removeAllListeners: (channel: string) => {
+    ipcRenderer.removeAllListeners(channel)
+  }
 })
 
 export type ElectronAPI = typeof window.electron

@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { parseDateTime } from './utils' // Helper function
-import * as FIT from 'fit-file-parser'
+import FitParser from 'fit-file-parser'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const Stats = fs.Stats
 
@@ -36,7 +36,7 @@ export async function parseFitFile(filePath: string): Promise<WorkoutData | null
     }
 
     // Extract comprehensive workout data from FIT records
-    const workout = extractWorkoutData(buffer, filePath)
+    const workout = await extractWorkoutData(buffer, filePath)
     
     if (!workout) return null
     
@@ -51,7 +51,7 @@ export async function parseFitFile(filePath: string): Promise<WorkoutData | null
  * Extract comprehensive workout data from FIT buffer using fit-file-parser
  * Parses all FIT file records for accurate duration, distance, calories, heart rate, elevation, etc.
  */
-function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | null {
+async function extractWorkoutData(buffer: Buffer, filePath: string): Promise<WorkoutData | null> {
   try {
     const stats = fs.statSync(filePath)
     
@@ -61,18 +61,35 @@ function extractWorkoutData(buffer: Buffer, filePath: string): WorkoutData | nul
     const workoutId = idMatch ? idMatch[1] : Date.now().toString()
     
     // Use fit-file-parser for comprehensive data extraction
-    let parser: FIT.Parser | null = null
     let records: any[] = []
     let deviceName = 'Unknown'
     
     try {
       // Parse FIT file using the library
-      const ParserClass = (FIT as any).default
-      if (!ParserClass) {
-        throw new Error('FIT.Parser not found in fit-file-parser')
+      const ParserConstructor = typeof FitParser === 'function' 
+        ? FitParser 
+        : (FitParser as any).default
+      
+      if (!ParserConstructor) {
+        throw new Error('FitParser constructor not found')
       }
-      parser = new ParserClass()
-      const parsedData = parser.parse(buffer)
+
+      const parser = new ParserConstructor({
+        force: true,
+        speedUnit: 'km/h',
+        lengthUnit: 'km',
+        temperatureUnit: 'celsius',
+        elapsedRecordField: true,
+        mode: 'both',
+      })
+      
+      const parsedData: any = await new Promise((resolve, reject) => {
+        parser.parse(buffer, (err: any, data: any) => {
+          if (err) reject(err)
+          else resolve(data)
+        })
+      })
+      
       records = parsedData.records || []
       
       // Extract device name from manufacturer and product fields

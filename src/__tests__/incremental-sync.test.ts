@@ -2,6 +2,47 @@
  * Unit Tests for Incremental Sync Manager
  */
 
+// Mock workout-parser to avoid file system issues
+jest.mock('../main/workout-parser', () => ({
+  parseFitFile: jest.fn().mockResolvedValue({
+    id: 'test-workout-id',
+    type: 'Run',
+    startTime: new Date(),
+    endTime: new Date(),
+    duration: 3600,
+    distance: 10000,
+    calories: 500,
+    filePath: '/tmp/test.fit',
+    deviceName: 'Test Device'
+  }),
+  scanWorkouts: jest.fn().mockResolvedValue([])
+}))
+
+// Mock better-sqlite3 for tests
+jest.mock('better-sqlite3', () => {
+  return jest.fn().mockImplementation(() => ({
+    exec: jest.fn(),
+    prepare: jest.fn().mockImplementation(() => ({
+      run: jest.fn().mockReturnValue({ changes: 1 }),
+      get: jest.fn().mockImplementation((query) => {
+        // Return appropriate mock data based on query
+        if (query.includes('COUNT(*)')) {
+          return { count: 0 }
+        }
+        return { 
+          totalSynced: 0, 
+          recentSyncs: 0,
+          oldestSync: undefined,
+          newestSync: undefined
+        }
+      }),
+      all: jest.fn().mockImplementation(() => [])
+    })),
+    pragma: jest.fn(),
+    close: jest.fn()
+  }))
+})
+
 const { IncrementalSyncManager } = require('../main/incremental-sync')
 const fs = require('fs')
 const path = require('path')

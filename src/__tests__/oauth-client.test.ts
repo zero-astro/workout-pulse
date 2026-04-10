@@ -11,6 +11,11 @@ const os = require('os')
 jest.mock('electron', () => ({
   app: {
     getPath: jest.fn(() => '/tmp/test-user-data')
+  },
+  safeStorage: {
+    isEncryptionAvailable: jest.fn(() => true),
+    encryptString: jest.fn((s) => Buffer.from(s)),
+    decryptString: jest.fn((b) => b.toString())
   }
 }))
 
