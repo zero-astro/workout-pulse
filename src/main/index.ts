@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { fittrackeeOAuth, FittrackeeOAuthClient } from './oauth-client'
@@ -19,9 +19,12 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, '../preload/index.js')
-    },
-    menuBarVisible: false
+    }
   })
+
+  // Hide menu bar on all platforms (especially macOS)
+  const emptyMenu = Menu.buildFromTemplate([])
+  mainWindow.setMenu(emptyMenu)
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
