@@ -37,8 +37,5 @@ module.exports = {
       lines: 60,
       statements: 60
     }
-  },
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1'
   }
 }
