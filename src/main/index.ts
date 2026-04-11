@@ -206,22 +206,24 @@ ipcMain.handle('get-workout-statistics', async () => {
 // Open auth modal from renderer
 ipcMain.handle('open-auth-modal', async () => {
   try {
-    // Check authentication status first
-    const authStatus = await ipcMain.handle('fittrackee-check-auth')()
+    // Check authentication status directly (not via handler to avoid recursion)
+    const isAuthenticated = fittrackeeOAuth.isAuthenticated()
     
-    if (authStatus.authenticated) {
+    if (isAuthenticated) {
       return { success: true, alreadyAuthenticated: true }
     }
     
-    // Get authorization URL and send to renderer
-    const authUrlResult = await ipcMain.handle('fittrackee-get-auth-url')()
-    if (!authUrlResult.success) {
-      return { success: false, error: authUrlResult.error }
+    // Get authorization URL
+    try {
+      const authUrl = fittrackeeOAuth.getAuthorizationUrl()
+      
+      // Send the auth URL to renderer to open in browser
+      mainWindow?.webContents.send('show-auth-modal', authUrl)
+      return { success: true }
+    } catch (error) {
+      console.error('[WorkoutPulse] Error getting auth URL:', error)
+      return { success: false, error: 'Failed to generate authorization URL' }
     }
-    
-    // Send the auth URL to renderer to open in browser
-    mainWindow?.webContents.send('show-auth-modal', authUrlResult.authUrl)
-    return { success: true }
   } catch (error) {
     console.error('[WorkoutPulse] Error opening auth modal:', error)
     return { success: false, error: error.message }
