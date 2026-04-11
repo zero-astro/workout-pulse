@@ -92,18 +92,22 @@ export class FittrackeeOAuthClient extends EventEmitter {
       const stored = await credentialsManager.getOAuthCredentials()
 
       if (!stored) {
-        logger.debug('OAuthClient', 'No OAuth credentials found')
+        logger.warn('OAuthClient', 'No OAuth credentials found - check .env file')
         return null
       }
 
-      // Note: This returns client credentials, not access tokens
-      // Access tokens should be stored separately in secure storage (e.g., electron-store)
+      // Validate that we have both required fields
+      if (!stored.clientId || !stored.clientSecret) {
+        logger.error('OAuthClient', 'Invalid credentials structure: missing clientId or clientSecret')
+        return null
+      }
+
       const credentials: OAuthCredentials = {
         clientId: stored.clientId,
         clientSecret: stored.clientSecret
       }
 
-      logger.info('OAuthClient', 'Loaded stored OAuth credentials')
+      logger.info('OAuthClient', `✓ Loaded OAuth credentials (clientId: ${stored.clientId.substring(0, 4)}...)`)
       return credentials
     } catch (error) {
       logger.error('OAuthClient', 'Error loading credentials', { error: error.message })

@@ -135,16 +135,26 @@ export class CredentialsManager {
   async getOAuthCredentials(): Promise<{ clientId: string; clientSecret: string } | null> {
     // First, try to load from .env file (highest priority for development)
     const envPath = path.join(process.cwd(), '.env')
+    logger.debug('CredentialsManager', `Checking for .env at: ${envPath}`)
+    
     if (fs.existsSync(envPath)) {
+      logger.info('CredentialsManager', 'Found .env file, loading...')
       dotenv.config({ path: envPath })
       
       const clientId = process.env.FITTRACKEE_CLIENT_ID
       const clientSecret = process.env.FITTRACKEE_CLIENT_SECRET
       
+      logger.debug('CredentialsManager', `Client ID loaded: ${clientId ? '***' : 'NOT FOUND'}`)
+      logger.debug('CredentialsManager', `Client Secret loaded: ${clientSecret ? '***' : 'NOT FOUND'}`)
+      
       if (clientId && clientSecret) {
-        logger.info('CredentialsManager', 'Loaded OAuth credentials from .env file')
+        logger.info('CredentialsManager', '✓ Loaded OAuth credentials from .env file')
         return { clientId, clientSecret }
+      } else {
+        logger.warn('CredentialsManager', '.env found but missing required variables')
       }
+    } else {
+      logger.debug('CredentialsManager', '.env file not found at expected location')
     }
 
     // Fall back to encrypted storage
