@@ -50,12 +50,34 @@ export function Dashboard() {
       setUsbConnected(false)
     }
     
+    // Listen for auth modal events
+    const handleShowAuthModal = async (_event: any, authUrl?: string) => {
+      if (authUrl) {
+        // Open browser to authorization URL
+        try {
+          await window.electron.openBrowser(authUrl)
+          setFittrackeeConnected(true)
+        } catch (error) {
+          console.error('Error opening auth URL:', error)
+          alert('Error opening authorization URL: ' + error)
+        }
+      } else {
+        // Just check status
+        const authStatus = await window.electron.fittrackeeCheckAuth()
+        if (authStatus.authenticated) {
+          setFittrackeeConnected(true)
+        }
+      }
+    }
+    
     const removeUsbConn = window.electron.on('usb-connected', handleUsbConnected)
     const removeUsbDisc = window.electron.on('usb-disconnected', handleUsbDisconnected)
+    const removeAuthModal = window.electron.on('show-auth-modal', handleShowAuthModal)
     
     return () => {
       removeUsbConn()
       removeUsbDisc()
+      removeAuthModal()
     }
   }, [])
 

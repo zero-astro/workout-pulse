@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { fittrackeeOAuth, FittrackeeOAuthClient } from './oauth-client'
@@ -206,7 +206,21 @@ ipcMain.handle('get-workout-statistics', async () => {
 // Open auth modal from renderer
 ipcMain.handle('open-auth-modal', async () => {
   try {
-    mainWindow?.webContents.send('show-auth-modal')
+    // Check authentication status first
+    const authStatus = await ipcMain.handle('fittrackee-check-auth')()
+    
+    if (authStatus.authenticated) {
+      return { success: true, alreadyAuthenticated: true }
+    }
+    
+    // Get authorization URL and send to renderer
+    const authUrlResult = await ipcMain.handle('fittrackee-get-auth-url')()
+    if (!authUrlResult.success) {
+      return { success: false, error: authUrlResult.error }
+    }
+    
+    // Send the auth URL to renderer to open in browser
+    mainWindow?.webContents.send('show-auth-modal', authUrlResult.authUrl)
     return { success: true }
   } catch (error) {
     console.error('[WorkoutPulse] Error opening auth modal:', error)
@@ -225,6 +239,17 @@ ipcMain.handle('fittrackee-get-recent-workouts', async (_event, limit = 10) => {
     return { success: true, workouts }
   } catch (error) {
     console.error('[WorkoutPulse] Error fetching recent workouts:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Open external browser for OAuth flow
+ipcMain.handle('open-browser', async (_event, url: string) => {
+  try {
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error opening browser:', error)
     return { success: false, error: error.message }
   }
 })

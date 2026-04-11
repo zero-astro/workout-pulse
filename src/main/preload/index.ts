@@ -20,7 +20,10 @@ contextBridge.exposeInMainWorld('electron', {
   getWorkoutStatistics: () => 
     ipcRenderer.invoke('get-workout-statistics'),
   openAuthModal: () => 
-    ipcRenderer.invoke('open-auth-modal')
+    ipcRenderer.invoke('open-auth-modal'),
+  // Browser methods
+  openBrowser: (url: string) => 
+    ipcRenderer.invoke('open-browser', url)
 })
 
 export type ElectronAPI = typeof window.electron
