@@ -2,6 +2,7 @@ import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import * as dotenv from 'dotenv'
 import { logger } from './logger'
 
 // Encryption configuration
@@ -129,9 +130,24 @@ export class CredentialsManager {
   }
 
   /**
-   * Retrieve stored OAuth credentials
+   * Retrieve stored OAuth credentials from .env or encrypted storage
    */
   async getOAuthCredentials(): Promise<{ clientId: string; clientSecret: string } | null> {
+    // First, try to load from .env file (highest priority for development)
+    const envPath = path.join(process.cwd(), '.env')
+    if (fs.existsSync(envPath)) {
+      dotenv.config({ path: envPath })
+      
+      const clientId = process.env.FITTRACKEE_CLIENT_ID
+      const clientSecret = process.env.FITTRACKEE_CLIENT_SECRET
+      
+      if (clientId && clientSecret) {
+        logger.info('CredentialsManager', 'Loaded OAuth credentials from .env file')
+        return { clientId, clientSecret }
+      }
+    }
+
+    // Fall back to encrypted storage
     try {
       if (!fs.existsSync(this.credentialsPath)) {
         return null
