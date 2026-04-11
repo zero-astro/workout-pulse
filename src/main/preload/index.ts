@@ -23,7 +23,10 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('open-auth-modal'),
   // Browser methods
   openBrowser: (url: string) => 
-    ipcRenderer.invoke('open-browser', url)
+    ipcRenderer.invoke('open-browser', url),
+  // FitTrackee POST method
+  postToUrl: (url: string, formData: URLSearchParams) => 
+    ipcRenderer.invoke('post-to-url', url, formData)
 })
 
 export type ElectronAPI = typeof window.electron

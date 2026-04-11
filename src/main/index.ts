@@ -213,16 +213,16 @@ ipcMain.handle('open-auth-modal', async () => {
       return { success: true, alreadyAuthenticated: true }
     }
     
-    // Get authorization URL
+    // Get authorization form data for FitTrackee
     try {
-      const authUrl = fittrackeeOAuth.getAuthorizationUrl()
+      const authData = fittrackeeOAuth.getAuthorizationFormData()
       
-      // Send the auth URL to renderer to open in browser
-      mainWindow?.webContents.send('show-auth-modal', authUrl)
+      // Send the form data to renderer to POST to FitTrackee
+      mainWindow?.webContents.send('show-auth-modal', authData)
       return { success: true }
     } catch (error) {
       console.error('[WorkoutPulse] Error getting auth URL:', error)
-      return { success: false, error: 'Failed to generate authorization URL' }
+      return { success: false, error: 'Failed to generate authorization form' }
     }
   } catch (error) {
     console.error('[WorkoutPulse] Error opening auth modal:', error)
@@ -252,6 +252,50 @@ ipcMain.handle('open-browser', async (_event, url: string) => {
     return { success: true }
   } catch (error) {
     console.error('[WorkoutPulse] Error opening browser:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// POST to FitTrackee authorization endpoint
+ipcMain.handle('post-to-url', async (_event, url: string, formData: URLSearchParams) => {
+  try {
+    // Use Electron's net module for the POST request
+    const { net } = require('electron')
+    
+    const request = net.request({
+      url,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    })
+    
+    return new Promise((resolve) => {
+      let responseData = ''
+      
+      request.on('response', (response) => {
+        let data = ''
+        response.on('data', (chunk) => { data += chunk })
+        response.on('end', () => {
+          resolve({ success: true, data })
+        })
+      })
+      
+      request.on('error', (err) => {
+        console.error('[WorkoutPulse] POST error:', err)
+        resolve({ success: false, error: err.message })
+      })
+      
+      // Write form data to request body
+      const formDataString = Array.from(formData.entries())
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&')
+      
+      request.write(formDataString)
+      request.end()
+    })
+  } catch (error) {
+    console.error('[WorkoutPulse] Error posting to URL:', error)
     return { success: false, error: error.message }
   }
 })

@@ -30,9 +30,14 @@ export class FittrackeeOAuthClient extends EventEmitter {
   private state: string = ''
   private server: any // Electron net module or http server
 
-  // OAuth endpoints for Fittrackee
-  private readonly authUrl = 'https://api.fittrackee.org/oauth/authorize'
-  private readonly tokenUrl = 'https://api.fittrackee.org/oauth/token'
+  // OAuth endpoints - configurable for self-hosted FitTrackee instances
+  constructor(baseApiUrl?: string) {
+    super()
+    
+    // Use provided base URL or default to cloud instance
+    this.baseApiUrl = baseApiUrl || 'https://api.fittrackee.org'
+    this.authUrl = `${this.baseApiUrl}/oauth/authorize`
+    this.tokenUrl = `${this.baseApiUrl}/oauth/token`
 
   // Storage paths
   private credentialsPath: string = ''
@@ -181,24 +186,26 @@ export class FittrackeeOAuthClient extends EventEmitter {
   }
 
   /**
-   * Generate authorization URL with state parameter
+   * Generate authorization form data for POST request to FitTrackee
+   * Note: FitTrackee requires a POST request, not GET like standard OAuth2
    */
-  getAuthorizationUrl(): string {
+  getAuthorizationFormData(): { url: string; formData: URLSearchParams } {
     // Generate cryptographically secure random state
     this.state = crypto.randomBytes(32).toString('hex')
 
     const params = new URLSearchParams({
       client_id: this.clientId,
-      redirect_uri: this.redirectUri,
       response_type: 'code',
+      scopes: 'workouts:read workouts:write', // FitTrackee uses 'scopes' not 'scope'
+      confirm: 'true',
       state: this.state,
-      scope: 'workouts:read workouts:write' // Adjust based on Fittrackee API
+      redirect_uri: this.redirectUri
     })
 
-    const url = `${this.authUrl}?${params.toString()}`
+    const url = `${this.authUrl}`
 
-    console.log('[WorkoutPulse] Authorization URL generated:', url)
-    return url
+    logger.info('OAuthClient', `Authorization form prepared for ${url}`)
+    return { url, formData: params }
   }
 
   /**

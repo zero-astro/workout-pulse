@@ -51,15 +51,25 @@ export function Dashboard() {
     }
     
     // Listen for auth modal events
-    const handleShowAuthModal = async (_event: any, authUrl?: string) => {
-      if (authUrl) {
-        // Open browser to authorization URL
+    const handleShowAuthModal = async (_event: any, authData?: { url: string; formData: URLSearchParams }) => {
+      if (authData) {
+        // FitTrackee requires POST request to /oauth/authorize
         try {
-          await window.electron.openBrowser(authUrl)
-          setFittrackeeConnected(true)
+          console.log('[Dashboard] Preparing FitTrackee authorization POST...')
+          
+          // Create a hidden iframe or use fetch to POST the form data
+          const response = await window.electron.postToUrl(authData.url, authData.formData)
+          
+          if (response.success) {
+            alert('✅ Authorization successful! Please log in with your FitTrackee credentials.')
+            // Refresh status after user completes login
+            setTimeout(() => checkStatus(), 2000)
+          } else {
+            throw new Error(response.error || 'Authorization failed')
+          }
         } catch (error) {
-          console.error('Error opening auth URL:', error)
-          alert('Error opening authorization URL: ' + error)
+          console.error('Error authorizing with FitTrackee:', error)
+          alert('Error authorizing with FitTrackee: ' + error)
         }
       } else {
         // Just check status
