@@ -407,8 +407,24 @@ export class FittrackeeOAuthClient extends EventEmitter {
    * Check if user is authorized
    */
   isAuthenticated(): boolean {
-    const credentials = this.loadStoredCredentials()
-    return !!credentials && !!credentials.accessToken
+    // First check client credentials (clientId/clientSecret)
+    const clientCreds = this.loadStoredCredentials()
+    if (!clientCreds || !clientCreds.clientId) {
+      return false
+    }
+    
+    // Then check access tokens from separate file
+    const accessTokens = this.loadAccessTokens()
+    if (accessTokens && accessTokens.accessToken) {
+      // Check if token is expired
+      if (accessTokens.tokenExpiry && Date.now() > accessTokens.tokenExpiry) {
+        console.log('[OAuthClient] Access token expired')
+        return false
+      }
+      return true
+    }
+    
+    return false
   }
 }
 
