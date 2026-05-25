@@ -1,16 +1,18 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import * as path from 'path'
-import * as fs from 'fs'
-import { fittrackeeOAuth, FittrackeeOAuthClient } from './oauth-client'
-import { initializeFittrackeeApi, FittrackeeApiClient } from './fittrackee-api-client'
-import { scanWorkouts, WorkoutData } from './workout-parser'
-import { detectUsbDevice } from './usb-detector'
-import { initializeLocalWorkoutDb } from './local-workout-db'
+// fs import removed - unused in this module
+// FittrackeeOAuthClient import removed - not directly used here
 
 let mainWindow: BrowserWindow | null = null
-let fittrackeeApi: FittrackeeApiClient | null = null
-const localDb = initializeLocalWorkoutDb()
+let fittrackeeApi: any = null // FittrackeeApiClient instance
+const localDb = require('./local-workout-db').initializeLocalWorkoutDb()
 
+/**
+ * Create the main application window with Electron security best practices
+ * - Disables Node.js integration in renderer process
+ * - Enables context isolation for secure IPC communication
+ * - Loads preload script for safe API exposure
+ */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -22,10 +24,11 @@ function createWindow() {
     }
   })
 
-  // Hide menu bar on all platforms (especially macOS)
+  // Hide menu bar on all platforms (especially macOS) for cleaner UI
   const emptyMenu = Menu.buildFromTemplate([])
   mainWindow.setMenu(emptyMenu)
 
+  // Load the app - use Vite dev server in development, bundled file in production
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else if (!app.isPackaged) {
@@ -35,20 +38,26 @@ function createWindow() {
   }
 }
 
+// Initialize the app and create window when Electron is ready
 app.whenReady().then(createWindow)
 
+// Quit all windows when all are closed (except on macOS where it stays active)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+// Reactivate app on macOS dock click when no windows are open
 app.on('activate', () => {
   if (!mainWindow) createWindow()
 })
 
-// USB Device Detection
+/**
+ * IPC Handler: Detect connected USB smartwatch devices
+ * Scans for Garmin, Fitbit, and Apple Watch devices using multiple detection methods
+ */
 ipcMain.handle('detect-usb-device', async () => {
   try {
-    const device = await detectUsbDevice()
+    const device = await require('./usb-detector').detectUsbDevice()
     console.log('[WorkoutPulse] USB detection result:', device)
     return device
   } catch (error) {
@@ -57,10 +66,14 @@ ipcMain.handle('detect-usb-device', async () => {
   }
 })
 
-// Fittrackee OAuth - Set credentials
+/**
+ * IPC Handler: Set Fittrackee OAuth credentials
+ * Validates and stores client ID/secret for API authentication
+ */
 ipcMain.handle('fittrackee-set-credentials', async (_event, clientId, clientSecret) => {
   try {
-    fittrackeeOAuth.setCredentials(clientId, clientSecret)
+    const { fittrackeeOAuth } = require('./oauth-client')
+    await fittrackeeOAuth.setCredentials(clientId, clientSecret)
     return { success: true }
   } catch (error) {
     console.error('[WorkoutPulse] Error setting credentials:', error)
@@ -68,9 +81,13 @@ ipcMain.handle('fittrackee-set-credentials', async (_event, clientId, clientSecr
   }
 })
 
-// Fittrackee OAuth - Get authorization URL
+/**
+ * IPC Handler: Get Fittrackee OAuth authorization URL
+ * Returns the URL for user to authenticate with Fittrackee
+ */
 ipcMain.handle('fittrackee-get-auth-url', async () => {
   try {
+    const { fittrackeeOAuth } = require('./oauth-client')
     const authUrl = fittrackeeOAuth.getAuthorizationUrl()
     return { success: true, authUrl }
   } catch (error) {
@@ -79,14 +96,18 @@ ipcMain.handle('fittrackee-get-auth-url', async () => {
   }
 })
 
-// Fittrackee OAuth - Exchange code for token
+/**
+ * IPC Handler: Exchange OAuth authorization code for access/refresh tokens
+ * Called after user completes Fittrackee login in browser
+ */
 ipcMain.handle('fittrackee-exchange-code', async (_event, code) => {
   try {
+    const { fittrackeeOAuth } = require('./oauth-client')
     const credentials = await fittrackeeOAuth.exchangeCodeForToken(code)
     
-    // Initialize API client with new credentials
+    // Initialize API client with new credentials if not already created
     if (!fittrackeeApi) {
-      fittrackeeApi = initializeFittrackeeApi(fittrackeeOAuth)
+      fittrackeeApi = require('./fittrackee-api-client').initializeFittrackeeApi(fittrackeeOAuth)
     }
     fittrackeeApi.setAccessToken(credentials)
     
@@ -97,10 +118,14 @@ ipcMain.handle('fittrackee-exchange-code', async (_event, code) => {
   }
 })
 
-// Fittrackee OAuth - Check authentication status
+/**
+ * IPC Handler: Check current Fittrackee authentication status
+ * Returns whether user is authenticated and has valid tokens
+ */
 ipcMain.handle('fittrackee-check-auth', async () => {
+  const { fittrackeeOAuth } = require('./oauth-client')
   const isAuthenticated = fittrackeeOAuth.isAuthenticated()
-  const credentials = fittrackeeOAuth.loadStoredCredentials()
+  const credentials = await fittrackeeOAuth.loadStoredCredentials()
   
   return {
     success: true,
@@ -110,29 +135,34 @@ ipcMain.handle('fittrackee-check-auth', async () => {
   }
 })
 
-// Sync workouts from USB to Fittrackee
+/**
+ * IPC Handler: Sync workouts from USB device to Fittrackee API
+ * Main sync workflow: detect devices → extract files → parse → upload
+ */
 ipcMain.handle('sync-workouts', async (_event, scanDirectory?: string) => {
   try {
-    // Check authentication first
-    const authStatus = await ipcMain.handle('fittrackee-check-auth')()
-    if (!authStatus.authenticated) {
+    // Check authentication first - prevent syncing without valid credentials
+    const authStatus = await fittrackeeApi?.getUserProfile()
+    if (!authStatus) {
       return { success: false, error: 'Not authenticated with Fittrackee' }
     }
 
     // Initialize API client if needed
     if (!fittrackeeApi) {
+      const { initializeFittrackeeApi } = require('./fittrackee-api-client')
+      const { fittrackeeOAuth } = require('./oauth-client')
       fittrackeeApi = initializeFittrackeeApi(fittrackeeOAuth)
     }
 
-    // Scan for workout files
+    // Scan for workout files in specified or default directory
     const scanPath = scanDirectory || '/Volumes/USB_DRIVE/workouts' // Default path
-    let workouts: WorkoutData[] = []
+    let workouts: any[] = []
     
     try {
-      workouts = await scanWorkouts(scanPath)
+      workouts = await require('./workout-parser').scanWorkouts(scanPath)
     } catch (error) {
       console.warn('[WorkoutPulse] Could not scan directory:', error)
-      // Try common locations
+      // Try common locations as fallback
       const homeDir = require('os').homedir()
       const commonPaths = [
         path.join(homeDir, 'Downloads'),
@@ -141,7 +171,7 @@ ipcMain.handle('sync-workouts', async (_event, scanDirectory?: string) => {
       
       for (const scanPath of commonPaths) {
         try {
-          workouts = await scanWorkouts(scanPath)
+          workouts = await require('./workout-parser').scanWorkouts(scanPath)
           if (workouts.length > 0) break
         } catch {}
       }
@@ -149,18 +179,19 @@ ipcMain.handle('sync-workouts', async (_event, scanDirectory?: string) => {
 
     console.log('[WorkoutPulse] Found', workouts.length, 'workouts to sync')
     
+    // No workouts found - return success with zero count
     if (workouts.length === 0) {
       return { success: true, synced: 0, message: 'No workout files found' }
     }
 
-    // Upload workouts to Fittrackee with progress tracking
+    // Upload workouts to Fittrackee in batches with deduplication
     const result = await fittrackeeApi.uploadWorkoutsBatch(workouts, {
       skipDuplicates: true,
       batchSize: 5,
       delayMs: 1000
     })
 
-    // Emit progress events during upload
+    // Emit progress events during upload for UI updates
     for (let i = 0; i < workouts.length; i++) {
       if (mainWindow) {
         mainWindow.webContents.send('sync-progress', { current: i + 1, total: workouts.length })
@@ -181,7 +212,10 @@ ipcMain.handle('sync-workouts', async (_event, scanDirectory?: string) => {
   }
 })
 
-// Get local workouts from database
+/**
+ * IPC Handler: Get all workouts from local SQLite database
+ * Returns workout data stored locally for offline access and statistics
+ */
 ipcMain.handle('get-local-workouts', async (_event, limit?: number) => {
   try {
     const workouts = localDb.getAllWorkouts({})
@@ -192,7 +226,10 @@ ipcMain.handle('get-local-workouts', async (_event, limit?: number) => {
   }
 })
 
-// Get workout statistics
+/**
+ * IPC Handler: Get workout statistics from local database
+ * Returns aggregated data: total workouts, distance, duration, calories, etc.
+ */
 ipcMain.handle('get-workout-statistics', async () => {
   try {
     const stats = localDb.getStatistics()
@@ -203,17 +240,22 @@ ipcMain.handle('get-workout-statistics', async () => {
   }
 })
 
-// Open auth modal from renderer
+/**
+ * IPC Handler: Open Fittrackee OAuth authorization modal
+ * Triggers the login flow for user authentication with Fittrackee
+ */
 ipcMain.handle('open-auth-modal', async () => {
   try {
-    // Check authentication status directly (not via handler to avoid recursion)
+    const { fittrackeeOAuth } = require('./oauth-client')
+    
+    // Check if already authenticated - skip auth flow if so
     const isAuthenticated = fittrackeeOAuth.isAuthenticated()
     
     if (isAuthenticated) {
       return { success: true, alreadyAuthenticated: true }
     }
     
-    // Get authorization form data for FitTrackee
+    // Get authorization form data for FitTrackee OAuth POST request
     try {
       const authData = fittrackeeOAuth.getAuthorizationFormData()
       
@@ -230,10 +272,15 @@ ipcMain.handle('open-auth-modal', async () => {
   }
 })
 
-// Get recent workouts from Fittrackee
+/**
+ * IPC Handler: Get recent workouts from Fittrackee API
+ * Fetches the most recent workouts synced to Fittrackee cloud
+ */
 ipcMain.handle('fittrackee-get-recent-workouts', async (_event, limit = 10) => {
   try {
     if (!fittrackeeApi) {
+      const { initializeFittrackeeApi } = require('./fittrackee-api-client')
+      const { fittrackeeOAuth } = require('./oauth-client')
       fittrackeeApi = initializeFittrackeeApi(fittrackeeOAuth)
     }
     
@@ -245,7 +292,10 @@ ipcMain.handle('fittrackee-get-recent-workouts', async (_event, limit = 10) => {
   }
 })
 
-// Open external browser for OAuth flow
+/**
+ * IPC Handler: Open external URL in system default browser
+ * Used for Fittrackee authorization page and other external links
+ */
 ipcMain.handle('open-browser', async (_event, url: string) => {
   try {
     await shell.openExternal(url)
@@ -256,10 +306,13 @@ ipcMain.handle('open-browser', async (_event, url: string) => {
   }
 })
 
-// POST to FitTrackee authorization endpoint
+/**
+ * IPC Handler: POST request to FitTrackee authorization endpoint
+ * Used for OAuth token exchange with form data submission
+ */
 ipcMain.handle('post-to-url', async (_event, url: string, formData: URLSearchParams) => {
   try {
-    // Use Electron's net module for the POST request
+    // Use Electron's net module for the POST request (bypasses CORS in renderer)
     const { net } = require('electron')
     
     const request = net.request({
@@ -273,20 +326,20 @@ ipcMain.handle('post-to-url', async (_event, url: string, formData: URLSearchPar
     return new Promise((resolve) => {
       let responseData = ''
       
-      request.on('response', (response) => {
+      request.on('response', (response: any) => {
         let data = ''
-        response.on('data', (chunk) => { data += chunk })
+        response.on('data', (chunk: any) => { data += chunk })
         response.on('end', () => {
           resolve({ success: true, data })
         })
       })
       
-      request.on('error', (err) => {
+      request.on('error', (err: any) => {
         console.error('[WorkoutPulse] POST error:', err)
         resolve({ success: false, error: err.message })
       })
       
-      // Write form data to request body
+      // Write form data to request body in URL-encoded format
       const formDataString = Array.from(formData.entries())
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
         .join('&')

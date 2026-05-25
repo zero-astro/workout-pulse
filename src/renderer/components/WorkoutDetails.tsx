@@ -1,5 +1,10 @@
+/**
+ * WorkoutDetails Component - Modal panel showing detailed workout information
+ * Displays metrics like duration, distance, calories, heart rate zones, and sync status
+ */
 import { useState, useEffect } from 'react'
 
+/** Local workout record structure (mirrors SQLite schema) */
 interface LocalWorkout {
   id: string
   type: string
@@ -15,6 +20,7 @@ interface LocalWorkout {
   syncedAt?: number
 }
 
+/** Props for the WorkoutDetails modal */
 interface WorkoutDetailsProps {
   workout: LocalWorkout | null
   onClose: () => void

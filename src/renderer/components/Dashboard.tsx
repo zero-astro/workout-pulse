@@ -1,7 +1,14 @@
+/**
+ * Dashboard Component - Main UI for WorkoutPulse
+ * 
+ * Displays workout statistics, USB device status, Fittrackee connection state,
+ * and provides controls for syncing workouts from smartwatch devices.
+ */
 import { useState, useEffect } from 'react'
 import { WorkoutDetails } from './WorkoutDetails'
 import { ThemeToggle } from './ThemeToggle'
 
+/** Local workout record structure matching the SQLite schema */
 interface LocalWorkout {
   id: string
   type: string
@@ -17,6 +24,7 @@ interface LocalWorkout {
   syncedAt?: number
 }
 
+/** Aggregated statistics for the dashboard */
 interface DashboardStats {
   total: number
   synced: number

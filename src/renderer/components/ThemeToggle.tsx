@@ -1,3 +1,7 @@
+/**
+ * ThemeToggle Component - Button for switching between auto/dark/light themes
+ * Cycles through system preference, dark mode, and light mode on each click
+ */
 import { useState, useEffect } from 'react'
 
 type ThemeMode = 'auto' | 'dark' | 'light'
