@@ -99,9 +99,9 @@ export class RobustUsbDetector extends EventEmitter {
   private scanMountedDevices(): string[] {
     const volumesDir = '/Volumes'
     
-    if (!fs.existsSync(volumesDir)) return []
-    
     try {
+      if (!fs.existsSync(volumesDir)) return []
+      
       const items = fs.readdirSync(volumesDir, { withFileTypes: true })
       return items
         .filter(dirent => dirent.isDirectory())
