@@ -27,6 +27,12 @@ export class RobustUsbDetector extends EventEmitter {
   private lastWorkoutScan = new Set<string>()
   private pollInterval: NodeJS.Timeout | null = null
   
+  // Adaptive polling configuration
+  private POLL_INTERVAL_IDLE = 30_000    // 30s when no device connected (idle)
+  private POLL_INTERVAL_ACTIVE = 2_000   // 2s when device is connected (active)
+  private currentPollInterval: number = this.POLL_INTERVAL_IDLE
+  private hasDevice = false               // Track if any device is currently detected
+  
   // Vendor IDs for common smartwatch brands (fallback detection)
   private knownVendorIds = {
     garmin: [0x0fc1],
@@ -334,10 +340,17 @@ export class RobustUsbDetector extends EventEmitter {
   }
 
   /**
-   * Periodic polling as fallback mechanism
+   * Periodic polling as fallback mechanism with adaptive intervals
+   * - Idle (no device): polls every 30s to minimize CPU usage
+   * - Active (device connected): polls every 2s for fast detection
    */
   private startPolling(): void {
-    this.pollInterval = setInterval(() => {
+    // Clear any existing interval first
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval)
+    }
+    
+    const poll = async () => {
       if (!this.isMonitoring) return
       
       // Check for new devices
@@ -351,6 +364,12 @@ export class RobustUsbDetector extends EventEmitter {
       if (newDevices.length > 0) {
         this.log('Polling detected new devices:', newDevices.map(d => d.name))
         
+        // Switch to active polling mode when a device is found
+        if (!this.hasDevice) {
+          this.hasDevice = true
+          this.switchToActivePolling()
+        }
+        
         newDevices.forEach(device => {
           this.emit('connected', {
             type: 'connected' as const,
@@ -362,15 +381,185 @@ export class RobustUsbDetector extends EventEmitter {
           // Start watching the new device
           this.watchDirectory(device.path, device.workoutFiles)
         })
+      } else if (this.hasDevice && this.deviceDirs.length === 0) {
+        // No devices found — switch back to idle polling
+        this.log('No devices detected during polling, switching to idle mode')
+        this.hasDevice = false
+        this.switchToIdlePolling()
       }
-    }, 5000) // Check every 5 seconds
+    }
+    
+    // Start with idle interval (30s)
+    this.pollInterval = setInterval(poll, this.currentPollInterval)
     
     // Unref to prevent Node from waiting for this timer during test cleanup
     if (this.pollInterval) {
       this.pollInterval.unref()
     }
     
-    this.log('Polling fallback enabled (5s interval)')
+    this.log(`Adaptive polling enabled (${this.currentPollInterval / 1000}s interval, idle mode)`)
+  }
+  
+  /**
+   * Switch to active polling mode (faster interval when device is connected)
+   */
+  private switchToActivePolling(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval)
+    }
+    
+    const poll = async () => {
+      if (!this.isMonitoring) return
+      
+      // Check for new devices
+      const previousPaths = new Set(this.deviceDirs.map(d => d.path))
+      this.discoverDevices()
+      
+      const newDevices = this.deviceDirs.filter(
+        device => !previousPaths.has(device.path) && device.workoutFiles.length > 0
+      )
+      
+      if (newDevices.length > 0) {
+        this.log('Active polling detected new devices:', newDevices.map(d => d.name))
+        
+        newDevices.forEach(device => {
+          this.emit('connected', {
+            type: 'connected' as const,
+            device: device.name,
+            devicePath: device.path,
+            timestamp: Date.now()
+          })
+          
+          this.watchDirectory(device.path, device.workoutFiles)
+        })
+      } else if (this.deviceDirs.length === 0) {
+        // No devices found — switch back to idle polling
+        this.log('No devices detected during active polling, switching to idle mode')
+        this.hasDevice = false
+        this.switchToIdlePolling()
+      }
+    }
+    
+    this.currentPollInterval = this.POLL_INTERVAL_ACTIVE
+    this.pollInterval = setInterval(poll, this.currentPollInterval)
+    
+    if (this.pollInterval) {
+      this.pollInterval.unref()
+    }
+    
+    this.log(`Switched to active polling (${this.currentPollInterval / 1000}s interval)`)
+  }
+  
+  /**
+   * Switch to idle polling mode (slower interval when no device is connected)
+   */
+  private switchToIdlePolling(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval)
+    }
+    
+    const poll = async () => {
+      if (!this.isMonitoring) return
+      
+      // Check for new devices
+      const previousPaths = new Set(this.deviceDirs.map(d => d.path))
+      this.discoverDevices()
+      
+      const newDevices = this.deviceDirs.filter(
+        device => !previousPaths.has(device.path) && device.workoutFiles.length > 0
+      )
+      
+      if (newDevices.length > 0) {
+        this.log('Idle polling detected new devices:', newDevices.map(d => d.name))
+        
+        // Switch to active mode when a device is found
+        this.hasDevice = true
+        this.switchToActivePolling()
+        
+        newDevices.forEach(device => {
+          this.emit('connected', {
+            type: 'connected' as const,
+            device: device.name,
+            devicePath: device.path,
+            timestamp: Date.now()
+          })
+          
+          this.watchDirectory(device.path, device.workoutFiles)
+        })
+      }
+    }
+    
+    this.currentPollInterval = this.POLL_INTERVAL_IDLE
+    this.pollInterval = setInterval(poll, this.currentPollInterval)
+    
+    if (this.pollInterval) {
+      this.pollInterval.unref()
+    }
+    
+    this.log(`Switched to idle polling (${this.currentPollInterval / 1000}s interval)`)
+  }
+  
+  /**
+   * Get the current polling interval in milliseconds
+   */
+  getPollingInterval(): number {
+    return this.currentPollInterval
+  }
+  
+  /**
+   * Set custom polling intervals (for testing or configuration)
+   * @param idleMs - Interval when no device is connected (default: 30000ms)
+   * @param activeMs - Interval when device is detected (default: 2000ms)
+   */
+  setPollingIntervals(idleMs?: number, activeMs?: number): void {
+    if (idleMs !== undefined && idleMs > 0) {
+      this.POLL_INTERVAL_IDLE = idleMs
+    }
+    if (activeMs !== undefined && activeMs > 0) {
+      this.POLL_INTERVAL_ACTIVE = activeMs
+    }
+    
+    // Restart polling with new intervals if currently monitoring
+    if (this.isMonitoring && this.pollInterval) {
+      clearInterval(this.pollInterval)
+      
+      const poll = async () => {
+        if (!this.isMonitoring) return
+        
+        const previousPaths = new Set(this.deviceDirs.map(d => d.path))
+        this.discoverDevices()
+        
+        const newDevices = this.deviceDirs.filter(
+          device => !previousPaths.has(device.path) && device.workoutFiles.length > 0
+        )
+        
+        if (newDevices.length > 0) {
+          if (!this.hasDevice) {
+            this.hasDevice = true
+            this.switchToActivePolling()
+          }
+          
+          newDevices.forEach(device => {
+            this.emit('connected', {
+              type: 'connected' as const,
+              device: device.name,
+              devicePath: device.path,
+              timestamp: Date.now()
+            })
+            
+            this.watchDirectory(device.path, device.workoutFiles)
+          })
+        } else if (this.hasDevice && this.deviceDirs.length === 0) {
+          this.hasDevice = false
+          this.switchToIdlePolling()
+        }
+      }
+      
+      this.pollInterval = setInterval(poll, this.currentPollInterval)
+      if (this.pollInterval) {
+        this.pollInterval.unref()
+      }
+    }
   }
 
   /**
