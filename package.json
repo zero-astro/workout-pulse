@@ -10,7 +10,8 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "typegen": "tsc --project tsconfig.declarations.json"
   },
   "keywords": [],
   "author": "",

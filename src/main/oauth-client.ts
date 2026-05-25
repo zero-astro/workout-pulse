@@ -31,6 +31,13 @@ export class FittrackeeOAuthClient extends EventEmitter {
   private server: any // Electron net module or http server
 
   // OAuth endpoints - configurable for self-hosted FitTrackee instances
+  private baseApiUrl: string = 'https://api.fittrackee.org'
+  private authUrl: string = ''
+  private tokenUrl: string = ''
+
+  // Storage paths
+  private credentialsPath: string = ''
+
   constructor(baseApiUrl?: string) {
     super()
     
@@ -38,12 +45,6 @@ export class FittrackeeOAuthClient extends EventEmitter {
     this.baseApiUrl = baseApiUrl || 'https://api.fittrackee.org'
     this.authUrl = `${this.baseApiUrl}/oauth/authorize`
     this.tokenUrl = `${this.baseApiUrl}/oauth/token`
-
-  // Storage paths
-  private credentialsPath: string = ''
-
-  constructor() {
-    super()
 
     // Initialize storage path
     if (app) {
