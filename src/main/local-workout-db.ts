@@ -40,6 +40,14 @@ export interface WorkoutFilterOptions {
   unsyncedOnly?: boolean
 }
 
+export interface PaginatedWorkoutResult {
+  workouts: LocalWorkoutRecord[]
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
+}
+
 export class LocalWorkoutDatabase {
   private db: any
   private dbPath: string
@@ -206,6 +214,78 @@ export class LocalWorkoutDatabase {
 
     const stmt = this.db.prepare(query)
     return stmt.all(...params) as LocalWorkoutRecord[]
+  }
+
+  /**
+   * Get paginated workouts with optional filtering (for lazy loading)
+   * Returns a page of workouts along with total count for UI pagination
+   */
+  getPaginatedWorkouts(
+    options?: WorkoutFilterOptions,
+    offset: number = 0,
+    limit: number = 25
+  ): PaginatedWorkoutResult {
+    let query = 'SELECT * FROM workouts'
+    const conditions: string[] = []
+    const params: any[] = []
+
+    if (options?.deviceId) {
+      conditions.push('deviceName = ?')
+      params.push(options.deviceId)
+    }
+
+    if (options?.type) {
+      conditions.push('type = ?')
+      params.push(options.type)
+    }
+
+    if (options?.startDate) {
+      conditions.push('startTime >= ?')
+      params.push(options.startDate.getTime())
+    }
+
+    if (options?.endDate) {
+      conditions.push('startTime <= ?')
+      params.push(options.endDate.getTime())
+    }
+
+    if (options?.syncedOnly) {
+      conditions.push('syncedAt IS NOT NULL')
+    }
+
+    if (options?.unsyncedOnly) {
+      conditions.push('syncedAt IS NULL')
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ')
+    }
+
+    query += ' ORDER BY startTime DESC'
+
+    // Get total count for pagination info
+    let countQuery = 'SELECT COUNT(*) as count FROM workouts'
+    if (conditions.length > 0) {
+      countQuery += ' WHERE ' + conditions.join(' AND ')
+    }
+    
+    const countStmt = this.db.prepare(countQuery)
+    const totalCount = (countStmt.get(...params) as { count: number }).count
+
+    // Get paginated results
+    query += ` LIMIT ? OFFSET ?`
+    params.push(limit, offset)
+
+    const stmt = this.db.prepare(query)
+    const workouts = stmt.all(...params) as LocalWorkoutRecord[]
+
+    return {
+      workouts,
+      total: totalCount,
+      offset,
+      limit,
+      hasMore: offset + limit < totalCount
+    }
   }
 
   /**

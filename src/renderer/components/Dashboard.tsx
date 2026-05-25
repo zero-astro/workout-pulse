@@ -43,6 +43,12 @@ export function Dashboard() {
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0, percentage: 0 })
   const [selectedWorkout, setSelectedWorkout] = useState<LocalWorkout | null>(null)
   const [themeMode, setThemeMode] = useState<'auto' | 'dark' | 'light'>('auto')
+  
+  // Pagination state for lazy loading
+  const [currentPage, setCurrentPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const PAGE_SIZE = 25
 
   useEffect(() => {
     checkStatus()
@@ -113,24 +119,45 @@ export function Dashboard() {
     }
   }
 
-  const fetchLocalData = async () => {
+  const fetchPaginatedWorkouts = async (page: number = 0, append: boolean = false) => {
     try {
-      const [workouts, statsResult] = await Promise.all([
-        window.electron.getLocalWorkouts(),
-        window.electron.getWorkoutStatistics()
-      ])
+      setIsLoadingMore(true)
       
-      setLocalWorkouts(workouts.workouts || [])
-      if (statsResult.success) {
-        setStats(statsResult)
+      // Build filter based on active tab
+      const filters = activeTab === 'unsynced' ? { unsyncedOnly: true } : undefined
+      
+      const result = await window.electron.getPaginatedWorkouts(
+        page * PAGE_SIZE,
+        PAGE_SIZE,
+        filters
+      )
+      
+      if (result.success) {
+        setLocalWorkouts(prev => append ? [...prev, ...result.workouts] : result.workouts)
+        setHasMore(result.hasMore)
+        
+        // Update stats with total count from paginated response
+        const [statsResult] = await Promise.all([window.electron.getWorkoutStatistics()])
+        if (statsResult.success) {
+          setStats(statsResult)
+        }
+      } else {
+        console.error('Error fetching paginated workouts:', result.error)
       }
     } catch (error) {
-      console.error('Fetch local data error:', error)
+      console.error('Fetch paginated workouts error:', error)
+    } finally {
+      setIsLoadingMore(false)
     }
   }
 
+  const loadMoreWorkouts = () => {
+    if (!hasMore || isLoadingMore) return
+    setCurrentPage(prev => prev + 1)
+  }
+
   useEffect(() => {
-    fetchLocalData()
+    fetchPaginatedWorkouts(0, false)
   }, [activeTab])
 
   const handleSync = async () => {
@@ -176,6 +203,9 @@ export function Dashboard() {
   const filteredWorkouts = activeTab === 'all' 
     ? localWorkouts 
     : localWorkouts.filter(w => !w.syncedAt)
+
+  // Calculate how many workouts are currently visible (for pagination display)
+  const displayedCount = localWorkouts.length
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -476,7 +506,7 @@ export function Dashboard() {
                     : isLightTheme ? 'bg-gray-100 text-gray-600 hover:text-gray-900' : 'bg-black/20 text-gray-400 hover:text-white'
                 }`}
               >
-                All ({localWorkouts.length})
+                All ({stats?.total || 0})
               </button>
               
               <button
@@ -537,6 +567,27 @@ export function Dashboard() {
                   </div>
                 </div>
               ))}
+              
+              {/* Load More Button for Pagination */}
+              {hasMore && !isLoadingMore && (
+                <button
+                  onClick={loadMoreWorkouts}
+                  className={`w-full py-3 rounded-lg font-medium transition-all ${
+                    isLightTheme 
+                      ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' 
+                      : 'bg-purple-600/20 text-purple-300 hover:bg-purple-600/30 border border-purple-500/30'
+                  }`}
+                >
+                  📥 Load More ({displayedCount} / {stats?.total || 0})
+                </button>
+              )}
+              
+              {/* Loading Indicator */}
+              {isLoadingMore && (
+                <div className={`text-center py-4 ${isLightTheme ? 'text-gray-600' : 'text-gray-400'}`}>
+                  <span className="animate-spin inline-block mr-2">🔄</span> Loading more workouts...
+                </div>
+              )}
             </div>
           )}
         </section>

@@ -227,6 +227,20 @@ ipcMain.handle('get-local-workouts', async (_event, limit?: number) => {
 })
 
 /**
+ * IPC Handler: Get paginated workouts from local SQLite database (for lazy loading)
+ * Returns a page of workouts with total count for UI pagination controls
+ */
+ipcMain.handle('get-paginated-workouts', async (_event, offset = 0, limit = 25, filters?: any) => {
+  try {
+    const result = localDb.getPaginatedWorkouts(filters || {}, offset, limit)
+    return { success: true, ...result }
+  } catch (error) {
+    console.error('[WorkoutPulse] Error fetching paginated workouts:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+/**
  * IPC Handler: Get workout statistics from local database
  * Returns aggregated data: total workouts, distance, duration, calories, etc.
  */

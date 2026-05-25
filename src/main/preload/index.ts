@@ -75,6 +75,16 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('get-local-workouts', limit),
   
   /**
+   * Get paginated workouts from local database for lazy loading
+   * Returns a page of workouts with total count and hasMore flag
+   * @param offset - Number of records to skip (for pagination)
+   * @param limit - Maximum number of workouts per page (default: 25)
+   * @param filters - Optional filter criteria (type, date range, etc.)
+   * @returns Promise<{ workouts: WorkoutData[], total: number, hasMore: boolean }>\n    */
+  getPaginatedWorkouts: (offset = 0, limit = 25, filters?: any) => 
+    ipcRenderer.invoke('get-paginated-workouts', offset, limit, filters),
+  
+  /**
    * Get workout statistics from local database
    * Returns total workouts, distance, duration, calories, etc.
    * @returns Promise<{ totalWorkouts: number; totalDistance: number; ... }>
